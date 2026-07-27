@@ -32,4 +32,4 @@ Crie toda a estrutura de código do projeto. Preciso que você forneça:
    - `docker-compose.yml`: Arquivo para orquestração simples no Coolify/Docker.
    - `README.md`: Instruções passo a passo de como inicializar o repositório Git local, fazer o commit, enviar para o GitHub/GitLab e implantar no Coolify.
 
-Por favor, forneça o código completo e legível de cada arquivo necessário para que eu possa apenas clonar/copiar para a minha pasta de projeto.
+Por favor, forneça o código completo e legível de cada arquivo necessário para que eu possa apenas clonar/copiar para a minha pasta de projeto..
