@@ -516,6 +516,299 @@ body {
   color: var(--text-primary);
 }
 
+/* Favorite Button */
+.btn-favorite {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(4px);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all var(--transition-fast);
+  opacity: 0;
+  transform: scale(0.8);
+  box-shadow: var(--shadow-sm);
+}
+
+[data-theme="dark"] .btn-favorite {
+  background: rgba(30, 33, 48, 0.85);
+}
+
+.book-card:hover .btn-favorite,
+.btn-favorite.is-favorite {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.btn-favorite:hover {
+  transform: scale(1.15) !important;
+  box-shadow: var(--shadow-md);
+}
+
+.btn-favorite.is-favorite {
+  animation: starPop 0.35s ease;
+  color: var(--star-color);
+}
+
+@keyframes starPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+/* Book Cover Image */
+.book-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: transform var(--transition-normal);
+}
+
+.book-card:hover .book-cover-img {
+  transform: scale(1.03);
+}
+
+.books-grid.list-view .book-cover-img {
+  border-radius: 6px;
+}
+
+/* Stats Actions */
+.stats-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Favorites Filter Button */
+.favorites-filter-btn {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-family);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.favorites-filter-btn:hover {
+  border-color: var(--star-color);
+  color: var(--text-primary);
+  background: rgba(245, 166, 35, 0.1);
+}
+
+.favorites-filter-btn.active {
+  background: linear-gradient(135deg, #f5af19, #f12711);
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(245, 175, 25, 0.35);
+}
+
+/* ============================================
+   Favorites Carousel Section (Image 2 design)
+   ============================================ */
+.favorites-section {
+  margin-top: 16px;
+  margin-bottom: 28px;
+  animation: fadeInUp 0.4s ease;
+}
+
+.favorites-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.favorites-section-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: -0.3px;
+}
+
+.carousel-nav {
+  display: flex;
+  gap: 6px;
+}
+
+.carousel-nav-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-radius: var(--radius-full);
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.carousel-nav-btn:hover {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.favorites-carousel {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  padding: 4px 4px 16px 4px;
+  scrollbar-width: none;
+}
+
+.favorites-carousel::-webkit-scrollbar {
+  display: none;
+}
+
+/* Featured Card in Carousel */
+.fav-card {
+  flex: 0 0 310px;
+  scroll-snap-align: start;
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal);
+  cursor: pointer;
+  color: white;
+}
+
+/* Vivid Rich Gradients (Matching Image 2 palette) */
+.fav-card:nth-child(3n+1) {
+  background: linear-gradient(135deg, #2b5876 0%, #4e4376 100%);
+}
+
+.fav-card:nth-child(3n+2) {
+  background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+}
+
+.fav-card:nth-child(3n+3) {
+  background: linear-gradient(135deg, #134e5e 0%, #71b280 100%);
+}
+
+.fav-card:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
+}
+
+.fav-card-cover {
+  width: 85px;
+  height: 120px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+  background: rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+}
+
+.fav-card-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 120px;
+  min-width: 0;
+}
+
+.fav-card-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.fav-card-stars {
+  color: #f1c40f;
+  font-size: 0.75rem;
+  letter-spacing: 1px;
+  margin-top: 4px;
+}
+
+.fav-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+}
+
+.fav-card-btn {
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.fav-card-btn:hover {
+  background: white;
+  color: #1a1d29;
+}
+
+.fav-card-remove {
+  background: transparent;
+  border: none;
+  color: #f1c40f;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+  transition: transform var(--transition-fast);
+}
+
+.fav-card-remove:hover {
+  transform: scale(1.25);
+}
+
 /* ============================================
    Loading State
    ============================================ */
@@ -706,9 +999,12 @@ body {
 
 /* PDF Viewer */
 .pdf-container {
-  width: 100%;
-  max-width: 900px;
+  width: fit-content;
+  min-width: 100%;
   padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .pdf-page-canvas {
@@ -716,8 +1012,6 @@ body {
   margin: 0 auto 16px;
   box-shadow: var(--shadow-md);
   border-radius: 2px;
-  max-width: 100%;
-  height: auto !important;
 }
 
 /* EPUB Viewer */
@@ -976,7 +1270,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  z-index: 20;
+  z-index: 50;
 }
 
 .zoom-controls button {
@@ -998,6 +1292,22 @@ body {
 .zoom-controls button:hover {
   background: var(--bg-input);
   box-shadow: var(--shadow-md);
+}
+
+.zoom-level {
+  width: 40px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--font-family);
+  user-select: none;
 }
 
 /* ============================================

@@ -9,9 +9,15 @@ const App = {
   filteredBooks: [],
   viewMode: 'grid',
   isLoading: false,
+  showFavoritesOnly: false,
+  coverCache: {},
 
   // GitHub API endpoint
   API_URL: 'https://api.github.com/repos/KAYOKG/BibliotecaDev/contents/LivrosDev',
+
+  // Open Library search API
+  OPENLIBRARY_SEARCH: 'https://openlibrary.org/search.json',
+  OPENLIBRARY_COVER: 'https://covers.openlibrary.org/b/id/',
 
   /**
    * Initialize the application
@@ -25,6 +31,9 @@ const App = {
     // Apply saved view mode
     this.viewMode = Utils.getViewMode();
     this.updateViewButtons();
+
+    // Load cover cache from localStorage
+    this.loadCoverCache();
 
     // Bind events
     this.bindEvents();
@@ -139,6 +148,9 @@ const App = {
       this.isLoading = false;
       this.renderBooks();
 
+      // Fetch covers in background
+      this.fetchAllCovers();
+
     } catch (error) {
       console.error('Erro ao buscar livros:', error);
       this.isLoading = false;
@@ -178,16 +190,60 @@ const App = {
    * Filter books by search query
    */
   filterBooks(query) {
-    const q = query.toLowerCase().trim();
-    if (!q) {
-      this.filteredBooks = [...this.books];
-    } else {
-      this.filteredBooks = this.books.filter(book =>
+    const q = (query || '').toLowerCase().trim();
+    let result = [...this.books];
+
+    if (q) {
+      result = result.filter(book =>
         book.displayName.toLowerCase().includes(q) ||
         book.extension.toLowerCase().includes(q)
       );
     }
+
+    if (this.showFavoritesOnly) {
+      result = result.filter(book => Utils.isFavorite(book.name));
+    }
+
+    // Sort: favorites first, then alphabetically
+    result.sort((a, b) => {
+      const aFav = Utils.isFavorite(a.name);
+      const bFav = Utils.isFavorite(b.name);
+      if (aFav && !bFav) return -1;
+      if (!aFav && bFav) return 1;
+      return a.displayName.localeCompare(b.displayName, 'pt-BR');
+    });
+
+    this.filteredBooks = result;
     this.renderBooks();
+  },
+
+  /**
+   * Toggle favorites filter
+   */
+  toggleFavoritesFilter() {
+    this.showFavoritesOnly = !this.showFavoritesOnly;
+    const btn = document.getElementById('favorites-filter-btn');
+    if (btn) {
+      btn.classList.toggle('active', this.showFavoritesOnly);
+    }
+    const searchInput = document.getElementById('search-input');
+    this.filterBooks(searchInput ? searchInput.value : '');
+  },
+
+  /**
+   * Toggle favorite for a book
+   */
+  toggleFavorite(sha, event) {
+    if (event) event.stopPropagation();
+    const book = this.books.find(b => b.sha === sha);
+    if (!book) return;
+
+    const added = Utils.toggleFavorite(book.name);
+    Utils.showToast(added ? '⭐ Adicionado aos favoritos!' : '☆ Removido dos favoritos');
+
+    // Re-filter and re-render so favorited books rise to top automatically
+    const searchInput = document.getElementById('search-input');
+    this.filterBooks(searchInput ? searchInput.value : '');
   },
 
   /**
@@ -279,16 +335,21 @@ const App = {
     const container = document.getElementById('books-container');
     const statsCount = document.getElementById('stats-count');
 
+    // Also render top favorites section carousel
+    this.renderFavoritesSection();
+
     // Update stats
-    statsCount.innerHTML = `<strong>${this.filteredBooks.length}</strong> de ${this.books.length} livros`;
+    const favCount = this.books.filter(b => Utils.isFavorite(b.name)).length;
+    statsCount.innerHTML = `<strong>${this.filteredBooks.length}</strong> de ${this.books.length} livros` +
+      (favCount > 0 ? ` · <span style="color:var(--star-color)">⭐ ${favCount}</span>` : '');
 
     // Empty state
     if (this.filteredBooks.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
-          <div class="empty-icon">📚</div>
-          <div class="empty-title">Nenhum livro encontrado</div>
-          <div class="empty-text">Tente buscar com outro termo</div>
+          <div class="empty-icon">${this.showFavoritesOnly ? '⭐' : '📚'}</div>
+          <div class="empty-title">${this.showFavoritesOnly ? 'Nenhum favorito ainda' : 'Nenhum livro encontrado'}</div>
+          <div class="empty-text">${this.showFavoritesOnly ? 'Clique na ⭐ de um livro para adicioná-lo aos favoritos' : 'Tente buscar com outro termo'}</div>
         </div>
       `;
       return;
@@ -306,6 +367,63 @@ const App = {
   },
 
   /**
+   * Render top favorites carousel section (Image 2 style)
+   */
+  renderFavoritesSection() {
+    const section = document.getElementById('favorites-section');
+    const carousel = document.getElementById('favorites-carousel');
+    if (!section || !carousel) return;
+
+    const favoriteBooks = this.books.filter(b => Utils.isFavorite(b.name));
+
+    // Hide if no favorites or if user is filtering by search/favorites-only
+    if (favoriteBooks.length === 0 || this.showFavoritesOnly) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.style.display = 'block';
+
+    const cardsHtml = favoriteBooks.map(book => {
+      const isReadable = ['pdf', 'epub'].includes(book.extension);
+      const coverUrl = this.coverCache[book.displayName];
+      const iconEmoji = book.extension === 'pdf' ? '📕' : book.extension === 'epub' ? '📗' : '📘';
+
+      const coverHtml = coverUrl
+        ? `<img src="${coverUrl}" alt="Capa" class="fav-card-cover" onerror="this.outerHTML='<div class=&quot;fav-card-cover&quot;>${iconEmoji}</div>'">`
+        : `<div class="fav-card-cover">${iconEmoji}</div>`;
+
+      return `
+        <div class="fav-card" data-name="${book.name}" onclick="${isReadable ? `App.openBook('${book.sha}')` : ''}">
+          ${coverHtml}
+          <div class="fav-card-info">
+            <div>
+              <div class="fav-card-title" title="${book.displayName}">${book.displayName}</div>
+              <div class="fav-card-stars">${book.stars}</div>
+            </div>
+            <div class="fav-card-actions">
+              ${isReadable ? `<button class="fav-card-btn" onclick="event.stopPropagation(); App.openBook('${book.sha}')">📖 Ler</button>` : ''}
+              <button class="fav-card-remove" onclick="App.toggleFavorite('${book.sha}', event)" title="Remover dos favoritos">⭐</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    carousel.innerHTML = cardsHtml;
+  },
+
+  /**
+   * Scroll favorites carousel left/right
+   */
+  scrollFavorites(offset) {
+    const carousel = document.getElementById('favorites-carousel');
+    if (carousel) {
+      carousel.scrollBy({ left: offset, behavior: 'smooth' });
+    }
+  },
+
+  /**
    * Render a single book card
    */
   renderCard(book) {
@@ -320,10 +438,24 @@ const App = {
     const progress = Utils.getProgress(book.name);
     const hasProgress = progress !== null;
 
+    // Check favorite state
+    const isFav = Utils.isFavorite(book.name);
+    const favIcon = isFav ? '⭐' : '☆';
+    const favClass = isFav ? ' is-favorite' : '';
+    const favTitle = isFav ? 'Remover dos favoritos' : 'Adicionar aos favoritos';
+
+    // Check for cover image
+    const coverUrl = this.coverCache[book.displayName];
+    const coverContent = coverUrl
+      ? `<img src="${coverUrl}" alt="Capa" class="book-cover-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+         <div class="book-icon" style="display:none">${iconEmoji}</div>`
+      : `<div class="book-icon">${iconEmoji}</div>`;
+
     return `
       <div class="book-card" data-name="${book.name}">
+        <button class="btn-favorite${favClass}" onclick="App.toggleFavorite('${book.sha}', event)" title="${favTitle}">${favIcon}</button>
         <div class="book-icon-container" onclick="${isReadable ? `App.openBook('${book.sha}')` : ''}">
-          <div class="book-icon">${iconEmoji}</div>
+          ${coverContent}
           <span class="book-format-badge ${badgeClass}">${book.extension.toUpperCase()}</span>
         </div>
         <div class="book-info">
@@ -366,6 +498,164 @@ const App = {
       a.click();
       document.body.removeChild(a);
       Utils.showToast('📥 Download iniciado!');
+    }
+  },
+
+  /* ==========================================
+     Book Cover Fetching (Open Library)
+     ========================================== */
+
+  /**
+   * Load cover cache from localStorage
+   */
+  loadCoverCache() {
+    try {
+      this.coverCache = JSON.parse(localStorage.getItem('livraria_covers') || '{}');
+    } catch (e) {
+      this.coverCache = {};
+    }
+  },
+
+  /**
+   * Save cover cache to localStorage
+   */
+  saveCoverCache() {
+    try {
+      localStorage.setItem('livraria_covers', JSON.stringify(this.coverCache));
+    } catch (e) {
+      console.warn('Erro ao salvar cache de capas:', e);
+    }
+  },
+
+  /**
+   * Fetch covers for all books in background
+   */
+  async fetchAllCovers() {
+    const booksToFetch = this.books.filter(b => !(b.displayName in this.coverCache));
+    if (booksToFetch.length === 0) return;
+
+    // Process in small batches to avoid overwhelming the API
+    const batchSize = 5;
+    for (let i = 0; i < booksToFetch.length; i += batchSize) {
+      const batch = booksToFetch.slice(i, i + batchSize);
+      const promises = batch.map(book => this.fetchCover(book));
+      await Promise.allSettled(promises);
+
+      // Save cache periodically
+      this.saveCoverCache();
+
+      // Small delay between batches
+      if (i + batchSize < booksToFetch.length) {
+        await new Promise(r => setTimeout(r, 300));
+      }
+    }
+  },
+
+  /**
+   * Fetch cover for a single book using Google Books API + Open Library fallback
+   */
+  async fetchCover(book) {
+    try {
+      // Clean title for search (strip common Portuguese subtitles and edition info)
+      let cleanQuery = book.displayName
+        .replace(/\d{1,2}(st|nd|rd|th)\s*edition/gi, '')
+        .replace(/[-_]+/g, ' ')
+        .replace(/\(.*?\)/g, '')
+        .replace(/\[.*?\]/g, '')
+        .trim();
+
+      // Split at hyphen/colon/dash to get core title
+      cleanQuery = cleanQuery.split(/[:\-–—]/)[0].trim();
+
+      if (!cleanQuery || cleanQuery.length < 2) {
+        this.coverCache[book.displayName] = null;
+        return;
+      }
+
+      // 1. Primary: Google Books API (high accuracy for PT-BR & tech titles)
+      const gbUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(cleanQuery)}&maxResults=1`;
+      const response = await fetch(gbUrl);
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.items && data.items.length > 0) {
+          const imageLinks = data.items[0].volumeInfo?.imageLinks;
+          let imgUrl = imageLinks?.thumbnail || imageLinks?.smallThumbnail;
+          if (imgUrl) {
+            imgUrl = imgUrl.replace(/^http:/i, 'https:');
+            this.coverCache[book.displayName] = imgUrl;
+            this.updateCardCover(book);
+            return;
+          }
+        }
+      }
+
+      // 2. Secondary Fallback: Open Library API
+      const olUrl = `${this.OPENLIBRARY_SEARCH}?title=${encodeURIComponent(cleanQuery)}&limit=1&fields=cover_i`;
+      const olResponse = await fetch(olUrl);
+      if (olResponse.ok) {
+        const olData = await olResponse.json();
+        if (olData.docs && olData.docs.length > 0 && olData.docs[0].cover_i) {
+          const coverId = olData.docs[0].cover_i;
+          const coverUrl = `${this.OPENLIBRARY_COVER}${coverId}-M.jpg`;
+          this.coverCache[book.displayName] = coverUrl;
+          this.updateCardCover(book);
+          return;
+        }
+      }
+
+      this.coverCache[book.displayName] = null;
+    } catch (e) {
+      this.coverCache[book.displayName] = null;
+    }
+  },
+
+  /**
+   * Update a single card's cover image in the DOM (Main Grid + Carousel)
+   */
+  updateCardCover(book) {
+    const coverUrl = this.coverCache[book.displayName];
+    if (!coverUrl) return;
+
+    // 1. Main Grid Card
+    const card = document.querySelector(`.book-card[data-name="${book.name}"]`);
+    if (card) {
+      const container = card.querySelector('.book-icon-container');
+      if (container) {
+        const iconDiv = container.querySelector('.book-icon');
+        if (iconDiv && !container.querySelector('.book-cover-img')) {
+          const img = document.createElement('img');
+          img.src = coverUrl;
+          img.alt = 'Capa';
+          img.className = 'book-cover-img';
+          img.onerror = () => {
+            img.style.display = 'none';
+            iconDiv.style.display = 'flex';
+          };
+          img.onload = () => {
+            iconDiv.style.display = 'none';
+          };
+          container.insertBefore(img, iconDiv);
+        }
+      }
+    }
+
+    // 2. Favorites Carousel Card
+    const favCard = document.querySelector(`.fav-card[data-name="${book.name}"]`);
+    if (favCard) {
+      const coverElem = favCard.querySelector('.fav-card-cover');
+      if (coverElem && coverElem.tagName !== 'IMG') {
+        const img = document.createElement('img');
+        img.src = coverUrl;
+        img.alt = 'Capa';
+        img.className = 'fav-card-cover';
+        img.onerror = () => {
+          // Keep div icon
+        };
+        img.onload = () => {
+          favCard.replaceChild(img, coverElem);
+        };
+      }
     }
   }
 };

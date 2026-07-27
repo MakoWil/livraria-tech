@@ -67,10 +67,34 @@
       <!-- Stats Bar -->
       <div class="stats-bar">
         <div class="stats-text" id="stats-count">Carregando...</div>
-        <div class="view-toggle">
-          <button class="view-btn active" data-view="grid" title="Grade" aria-label="Visualização em grade">▦</button>
-          <button class="view-btn" data-view="list" title="Lista" aria-label="Visualização em lista">☰</button>
+        <div class="stats-actions">
+          <button class="favorites-filter-btn" id="favorites-filter-btn" onclick="App.toggleFavoritesFilter()" title="Filtrar favoritos" aria-label="Filtrar favoritos">
+            ⭐ <span>Favoritos</span>
+          </button>
+          <div class="view-toggle">
+            <button class="view-btn active" data-view="grid" title="Grade" aria-label="Visualização em grade">▦</button>
+            <button class="view-btn" data-view="list" title="Lista" aria-label="Visualização em lista">☰</button>
+          </div>
         </div>
+      </div>
+
+      <!-- Favorites Carousel Section (Featured / Recommended - Image 2 style) -->
+      <section class="favorites-section" id="favorites-section" style="display: none;">
+        <div class="favorites-section-header">
+          <h2 class="favorites-section-title">⭐ Meus Favoritos</h2>
+          <div class="carousel-nav">
+            <button class="carousel-nav-btn" onclick="App.scrollFavorites(-340)" title="Anterior">‹</button>
+            <button class="carousel-nav-btn" onclick="App.scrollFavorites(340)" title="Próximo">›</button>
+          </div>
+        </div>
+        <div class="favorites-carousel" id="favorites-carousel">
+          <!-- Dynamically populated favorite cards -->
+        </div>
+      </section>
+
+      <!-- Section Title for All Books -->
+      <div class="catalog-header" id="catalog-header" style="margin-bottom: 16px;">
+        <h2 class="catalog-title" style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">📚 Todos os Livros</h2>
       </div>
 
       <!-- Books Container -->
@@ -91,8 +115,8 @@
       <button class="reader-btn" id="reader-bookmark-add" title="Adicionar marcador">📑 <span>Marcar</span></button>
       <button class="reader-btn" id="reader-bookmarks-toggle" title="Ver marcadores">🔖 <span>Marcadores</span></button>
       <button class="reader-btn-icon" id="reader-night" title="Modo noturno" aria-label="Alternar modo noturno">🌙</button>
-      <button class="reader-btn-icon" id="font-decrease" title="Diminuir fonte" aria-label="Diminuir fonte">A-</button>
-      <button class="reader-btn-icon" id="font-increase" title="Aumentar fonte" aria-label="Aumentar fonte">A+</button>
+      <button class="reader-btn-icon" id="font-decrease" title="Diminuir fonte/zoom" aria-label="Diminuir fonte/zoom">A-</button>
+      <button class="reader-btn-icon" id="font-increase" title="Aumentar fonte/zoom" aria-label="Aumentar fonte/zoom">A+</button>
       <button class="reader-btn accent" id="reader-download" title="Download">📥 <span>Download</span></button>
     </div>
 
@@ -106,6 +130,13 @@
       <!-- PDF or EPUB rendered here -->
     </div>
 
+    <!-- Zoom Controls (floating, for PDF inside reader-view) -->
+    <div class="zoom-controls" id="zoom-controls" style="display:none;">
+      <button id="zoom-in" title="Aumentar zoom (Ctrl + Scroll ↑)" aria-label="Aumentar zoom">+</button>
+      <span class="zoom-level" id="zoom-level">120%</span>
+      <button id="zoom-out" title="Diminuir zoom (Ctrl + Scroll ↓)" aria-label="Diminuir zoom">−</button>
+    </div>
+
     <!-- Bookmarks Panel (slide-in) -->
     <div class="bookmarks-panel" id="bookmarks-panel">
       <div class="bookmarks-header">
@@ -116,12 +147,6 @@
         <!-- Dynamic bookmarks -->
       </div>
     </div>
-  </div>
-
-  <!-- Zoom Controls (floating, for PDF) -->
-  <div class="zoom-controls" id="zoom-controls" style="display:none;">
-    <button id="zoom-in" title="Zoom in" aria-label="Aumentar zoom">+</button>
-    <button id="zoom-out" title="Zoom out" aria-label="Diminuir zoom">−</button>
   </div>
 
   <!-- Bookmark Add Modal -->

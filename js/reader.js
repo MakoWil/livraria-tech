@@ -73,10 +73,23 @@ const Reader = {
     readerView.classList.remove('night-mode');
     document.body.style.overflow = '';
 
+    // Remove Ctrl+Scroll handler
+    if (this._wheelZoomHandler) {
+      readerView.removeEventListener('wheel', this._wheelZoomHandler);
+      this._wheelZoomHandler = null;
+    }
+
+    // Clear zoom timeout
+    if (this._zoomTimeout) {
+      clearTimeout(this._zoomTimeout);
+      this._zoomTimeout = null;
+    }
+
     // Cleanup
     this.pdfDoc = null;
     this.pdfPages = [];
     this.nightMode = false;
+    this.pdfScale = 1.2;
 
     if (this.epubBook) {
       this.epubBook.destroy();
@@ -86,6 +99,9 @@ const Reader = {
 
     // Close bookmarks
     this.closeBookmarks();
+
+    // Hide zoom controls
+    document.getElementById('zoom-controls').style.display = 'none';
 
     this.currentBook = null;
     this.currentType = null;
@@ -104,6 +120,9 @@ const Reader = {
 
     // Show zoom controls
     document.getElementById('zoom-controls').style.display = 'flex';
+
+    // Reset zoom scale default
+    this.pdfScale = 1.2;
 
     // Use CORS proxy for GitHub raw content
     const proxyUrl = url;
@@ -132,12 +151,20 @@ const Reader = {
       canvas.dataset.page = i;
       canvas.width = viewport.width;
       canvas.height = viewport.height;
+      canvas.style.width = viewport.width + 'px';
+      canvas.style.height = viewport.height + 'px';
 
       pagesContainer.appendChild(canvas);
-      this.pdfPages.push({ page, canvas, viewport });
+      const pageItem = { page, canvas, renderTask: null };
+      this.pdfPages.push(pageItem);
 
       const context = canvas.getContext('2d');
-      await page.render({ canvasContext: context, viewport }).promise;
+      try {
+        pageItem.renderTask = page.render({ canvasContext: context, viewport });
+        await pageItem.renderTask.promise;
+      } catch (e) {
+        // Ignore cancelled render
+      }
     }
 
     // Scroll to saved position
@@ -154,8 +181,23 @@ const Reader = {
       this.updatePDFProgress(readerContent, totalPages);
     }, 500));
 
-    // Update progress bar
+    // Ctrl + Scroll Wheel zoom attached to full reader view
+    const readerView = document.getElementById('reader-view');
+    this._wheelZoomHandler = (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        if (e.deltaY < 0) {
+          this.zoomIn();
+        } else if (e.deltaY > 0) {
+          this.zoomOut();
+        }
+      }
+    };
+    readerView.addEventListener('wheel', this._wheelZoomHandler, { passive: false });
+
+    // Update progress bar & zoom level display
     this.updateProgressBar(0, totalPages);
+    this.updateZoomLevel();
   },
 
   /**
@@ -187,25 +229,67 @@ const Reader = {
   /**
    * PDF Zoom
    */
-  async zoomIn() {
+  zoomIn() {
     if (this.currentType !== 'pdf' || !this.pdfDoc) return;
-    this.pdfScale = Math.min(this.pdfScale + 0.2, 3.0);
-    await this.reRenderPDF();
+    this.pdfScale = Math.min(+(this.pdfScale + 0.2).toFixed(1), 3.0);
+    this.applyZoom();
   },
 
-  async zoomOut() {
+  zoomOut() {
     if (this.currentType !== 'pdf' || !this.pdfDoc) return;
-    this.pdfScale = Math.max(this.pdfScale - 0.2, 0.5);
-    await this.reRenderPDF();
+    this.pdfScale = Math.max(+(this.pdfScale - 0.2).toFixed(1), 0.5);
+    this.applyZoom();
+  },
+
+  applyZoom() {
+    // 1. Instant CSS scaling
+    this.pdfPages.forEach(({ canvas, page }) => {
+      const vp = page.getViewport({ scale: this.pdfScale });
+      canvas.style.width = vp.width + 'px';
+      canvas.style.height = vp.height + 'px';
+    });
+
+    // 2. Update zoom indicator text
+    this.updateZoomLevel();
+
+    // 3. Debounced high-res re-render
+    if (this._zoomTimeout) clearTimeout(this._zoomTimeout);
+    this._zoomTimeout = setTimeout(() => {
+      this.reRenderPDF();
+    }, 150);
   },
 
   async reRenderPDF() {
-    for (const { page, canvas } of this.pdfPages) {
-      const viewport = page.getViewport({ scale: this.pdfScale });
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      const context = canvas.getContext('2d');
-      await page.render({ canvasContext: context, viewport }).promise;
+    for (const item of this.pdfPages) {
+      if (item.renderTask) {
+        try {
+          item.renderTask.cancel();
+        } catch (e) {}
+      }
+
+      const viewport = item.page.getViewport({ scale: this.pdfScale });
+      item.canvas.width = viewport.width;
+      item.canvas.height = viewport.height;
+      item.canvas.style.width = viewport.width + 'px';
+      item.canvas.style.height = viewport.height + 'px';
+
+      const context = item.canvas.getContext('2d');
+      try {
+        item.renderTask = item.page.render({ canvasContext: context, viewport });
+        await item.renderTask.promise;
+      } catch (e) {
+        // Render task cancelled or replaced
+      }
+    }
+  },
+
+  /**
+   * Update zoom level indicator
+   */
+  updateZoomLevel() {
+    const el = document.getElementById('zoom-level');
+    if (el) {
+      el.textContent = `${Math.round(this.pdfScale * 100)}%`;
     }
   },
 
@@ -301,9 +385,13 @@ const Reader = {
   },
 
   /**
-   * EPUB Font Size
+   * EPUB Font Size & PDF Zoom Header buttons
    */
   increaseFontSize() {
+    if (this.currentType === 'pdf') {
+      this.zoomIn();
+      return;
+    }
     if (!this.epubRendition) return;
     const current = parseInt(this.epubRendition.themes._overrides?.fontSize || '100');
     const newSize = Math.min(current + 10, 200);
@@ -312,6 +400,10 @@ const Reader = {
   },
 
   decreaseFontSize() {
+    if (this.currentType === 'pdf') {
+      this.zoomOut();
+      return;
+    }
     if (!this.epubRendition) return;
     const current = parseInt(this.epubRendition.themes._overrides?.fontSize || '100');
     const newSize = Math.max(current - 10, 60);

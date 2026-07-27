@@ -198,5 +198,42 @@ const Utils = {
   generateStars() {
     const rating = Math.floor(Math.random() * 2) + 4; // 4 or 5 stars
     return '★'.repeat(rating) + '☆'.repeat(5 - rating);
+  },
+
+  /* ==========================================
+     Favorites Management
+     ========================================== */
+
+  /**
+   * Get all favorites
+   */
+  getFavorites() {
+    try {
+      return JSON.parse(localStorage.getItem('livraria_favorites') || '[]');
+    } catch (e) {
+      return [];
+    }
+  },
+
+  /**
+   * Toggle favorite status for a book
+   */
+  toggleFavorite(bookName) {
+    const favorites = this.getFavorites();
+    const index = favorites.indexOf(bookName);
+    if (index > -1) {
+      favorites.splice(index, 1);
+    } else {
+      favorites.push(bookName);
+    }
+    localStorage.setItem('livraria_favorites', JSON.stringify(favorites));
+    return index === -1; // returns true if it was added
+  },
+
+  /**
+   * Check if a book is favorited
+   */
+  isFavorite(bookName) {
+    return this.getFavorites().includes(bookName);
   }
 };
