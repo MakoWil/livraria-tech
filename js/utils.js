@@ -130,7 +130,7 @@ const Utils = {
         data,
         expiry: Date.now() + ttlMinutes * 60 * 1000
       };
-      localStorage.setItem(`livraria_cache_${key}`, JSON.stringify(cacheEntry));
+      localStorage.setItem(`livraria_v2_cache_${key}`, JSON.stringify(cacheEntry));
     } catch (e) {
       console.warn('Erro ao salvar cache:', e);
     }
@@ -141,7 +141,7 @@ const Utils = {
    */
   getCacheData(key) {
     try {
-      const raw = localStorage.getItem(`livraria_cache_${key}`);
+      const raw = localStorage.getItem(`livraria_v2_cache_${key}`);
       if (!raw) return null;
       const cacheEntry = JSON.parse(raw);
       if (Date.now() > cacheEntry.expiry) {
