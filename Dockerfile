@@ -9,7 +9,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     QT_QPA_PLATFORM=offscreen \
     CALIBRE_TEMP_DIR=/tmp \
     NODE_ENV=production \
-    PORT=3000 \
+    PORT=80 \
     CACHE_DIR=/app/cache
 
 # Instala Calibre (para o binário ebook-convert), fontes do sistema e curl para o healthcheck
@@ -33,10 +33,11 @@ COPY . .
 # Cria pasta de cache persistente (mapeada como volume no Coolify)
 RUN mkdir -p /app/cache
 
-EXPOSE 3000
+# Expõe as portas 80 e 3000 para compatibilidade universal no Coolify
+EXPOSE 80 3000
 
-# Verificação de integridade do container
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
+# Verificação de integridade do container (checa porta 80 ou 3000)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD curl -f http://localhost:80/health || curl -f http://localhost:3000/health || exit 1
 
 CMD ["node", "server.js"]

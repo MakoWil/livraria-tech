@@ -7,7 +7,8 @@ const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT, 10) || 80;
+const ALT_PORT = PORT === 80 ? 3000 : 80;
 const CACHE_DIR = process.env.CACHE_DIR || path.join(__dirname, 'cache');
 const TEMP_DIR = path.join(CACHE_DIR, 'temp');
 
@@ -182,15 +183,24 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Inicialização do servidor
+// Inicialização do servidor na porta principal
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`====================================================`);
   console.log(`  Livraria Tech - Servidor Node.js em execução`);
-  console.log(`  Porta: ${PORT}`);
+  console.log(`  Porta Principal: ${PORT}`);
   console.log(`  Diretório de Cache: ${CACHE_DIR}`);
   console.log(`  Ambiente: ${process.env.NODE_ENV || 'production'}`);
   console.log(`====================================================`);
 });
+
+// Inicialização opcional na porta alternativa para garantir compatibilidade com Coolify
+try {
+  app.listen(ALT_PORT, '0.0.0.0', () => {
+    console.log(`  Porta Secundária ativa: ${ALT_PORT}`);
+  });
+} catch (err) {
+  // Ignora se não puder fazer bind na porta alternativa
+}
 
 // Tratamento de sinais para desligamento gracioso (Docker)
 process.on('SIGTERM', () => {
