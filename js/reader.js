@@ -663,6 +663,11 @@ const Reader = {
       a.href = this.activeBlobUrl;
       const baseName = this.currentBook.name.replace(/\.[^/.]+$/, '');
       a.download = `${baseName}.epub`;
+    } else if (this.currentBook.extension === 'pdf') {
+      const baseName = this.currentBook.name.replace(/\.[^/.]+$/, '');
+      const epubFileName = `${baseName}.epub`;
+      a.href = `/api/book-epub?url=${encodeURIComponent(this.currentBook.download_url)}&download=1&filename=${encodeURIComponent(epubFileName)}`;
+      a.download = epubFileName;
     } else {
       a.href = this.currentBook.download_url;
       a.download = this.currentBook.name;

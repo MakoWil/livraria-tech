@@ -468,7 +468,7 @@ const App = {
         </div>
         <div class="book-actions">
           ${isReadable ? `<button class="btn-sm btn-read" onclick="App.openBook('${book.sha}')">📖 Ler</button>` : ''}
-          <button class="btn-sm btn-download" onclick="App.downloadBook('${book.sha}')" title="Download">📥</button>
+          <button class="btn-sm btn-download" onclick="App.downloadBook('${book.sha}')" title="${book.extension === 'pdf' ? 'Baixar convertido em EPUB' : 'Download'}">📥 ${book.extension === 'pdf' ? 'EPUB' : ''}</button>
         </div>
       </div>
     `;
@@ -485,11 +485,26 @@ const App = {
   },
 
   /**
-   * Download a book by SHA
+   * Download a book by SHA (com conversão dinâmica para EPUB para arquivos PDF)
    */
   downloadBook(sha) {
     const book = this.books.find(b => b.sha === sha) || this.filteredBooks.find(b => b.sha === sha);
-    if (book) {
+    if (!book) return;
+
+    if (book.extension === 'pdf') {
+      const baseName = book.name.replace(/\.[^/.]+$/, '');
+      const epubFileName = `${baseName}.epub`;
+      const downloadUrl = `/api/book-epub?url=${encodeURIComponent(book.download_url)}&download=1&filename=${encodeURIComponent(epubFileName)}`;
+
+      Utils.showToast('⏳ Preparando e convertendo para EPUB... O download iniciará em instantes.');
+
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = epubFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } else {
       const a = document.createElement('a');
       a.href = book.download_url;
       a.download = book.name;

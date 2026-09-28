@@ -57,15 +57,40 @@ app.get('/api/book-epub', async (req, res) => {
   const epubPath = path.join(CACHE_DIR, `${hash}.epub`);
   const tempPdfPath = path.join(TEMP_DIR, `${hash}.pdf`);
 
+  // Helper para envio do arquivo EPUB com headers corretos de exibição ou download
+  const sendEpubFile = (filePath, cacheStatus) => {
+    const isDownload = req.query.download === '1' || req.query.download === 'true';
+    let filename = req.query.filename;
+
+    if (!filename) {
+      filename = path.basename(filePath);
+    }
+    if (!filename.toLowerCase().endsWith('.epub')) {
+      filename += '.epub';
+    }
+
+    const safeFilename = filename.replace(/["\r\n]/g, '_');
+    const encodedFilename = encodeURIComponent(safeFilename);
+
+    res.setHeader('Content-Type', 'application/epub+zip');
+    res.setHeader('X-Cache-Status', cacheStatus);
+
+    if (isDownload) {
+      res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`);
+    } else {
+      res.setHeader('Content-Disposition', `inline; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`);
+    }
+
+    return res.sendFile(filePath);
+  };
+
   // 1. Verifica se já está em cache
   if (fs.existsSync(epubPath)) {
     try {
       const stats = fs.statSync(epubPath);
       if (stats.size > 0) {
         console.log(`[CACHE HIT] ${hash}.epub servido direto do cache`);
-        res.setHeader('Content-Type', 'application/epub+zip');
-        res.setHeader('X-Cache-Status', 'HIT');
-        return res.sendFile(epubPath);
+        return sendEpubFile(epubPath, 'HIT');
       }
     } catch (e) {
       console.warn(`[WARN] Erro ao verificar arquivo de cache:`, e.message);
@@ -78,9 +103,7 @@ app.get('/api/book-epub', async (req, res) => {
     try {
       await activeConversions.get(hash);
       if (fs.existsSync(epubPath)) {
-        res.setHeader('Content-Type', 'application/epub+zip');
-        res.setHeader('X-Cache-Status', 'HIT-AFTER-WAIT');
-        return res.sendFile(epubPath);
+        return sendEpubFile(epubPath, 'HIT-AFTER-WAIT');
       }
     } catch (err) {
       return res.status(500).json({
@@ -144,9 +167,7 @@ app.get('/api/book-epub', async (req, res) => {
   try {
     await conversionPromise;
 
-    res.setHeader('Content-Type', 'application/epub+zip');
-    res.setHeader('X-Cache-Status', 'MISS');
-    return res.sendFile(epubPath);
+    return sendEpubFile(epubPath, 'MISS');
   } catch (error) {
     console.error(`[CONVERT FAILED] Erro ao converter ${fileUrl}:`, error.message);
 
