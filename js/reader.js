@@ -14,6 +14,7 @@ const Reader = {
   epubRendition: null,
   nightMode: false,
   bookmarksOpen: false,
+  activeBlobUrl: null,
 
   /**
    * Open a book in the reader
@@ -42,7 +43,8 @@ const Reader = {
     // Load based on type
     try {
       if (this.currentType === 'pdf') {
-        await this.loadPDF(book.download_url, readerContent);
+        // Tenta conversão otimizada para EPUB com fallback automático
+        await this.loadConvertedEPUB(book, readerContent);
       } else if (this.currentType === 'epub') {
         await this.loadEPUB(book.download_url, readerContent);
       } else {
@@ -65,6 +67,54 @@ const Reader = {
   },
 
   /**
+   * Tenta carregar o PDF convertido em EPUB com feedback visual amigável e fallback automático
+   */
+  async loadConvertedEPUB(book, readerContent) {
+    // 1. Feedback visual amigável durante a preparação/conversão
+    readerContent.innerHTML = `
+      <div class="loading-container" style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:320px; text-align:center; padding:2rem 1.5rem;">
+        <div class="loading-spinner"></div>
+        <div class="loading-text" style="font-weight:600; font-size:1.1rem; margin-top:1.25rem; color:var(--text-primary); max-width:460px;">
+          Preparando e otimizando o livro para sua tela...
+        </div>
+        <div style="font-size:0.875rem; color:var(--text-secondary); margin-top:0.5rem; max-width:440px; line-height:1.45;">
+          (isso pode levar alguns instantes na primeira leitura)
+        </div>
+      </div>
+    `;
+
+    try {
+      const apiUrl = `/api/book-epub?url=${encodeURIComponent(book.download_url)}`;
+      const response = await fetch(apiUrl);
+
+      if (!response.ok) {
+        throw new Error(`Servidor de conversão retornou status ${response.status}`);
+      }
+
+      const blob = await response.blob();
+
+      // Revoga blob anterior se existente para liberar memória
+      if (this.activeBlobUrl) {
+        URL.revokeObjectURL(this.activeBlobUrl);
+      }
+
+      this.activeBlobUrl = URL.createObjectURL(blob);
+      this.currentType = 'epub'; // Altera para epub para utilizar layout refluível e controles de fonte
+
+      // Renderiza o EPUB usando a URL Blob
+      await this.loadEPUB(this.activeBlobUrl, readerContent);
+      Utils.showToast('📖 Livro otimizado para leitura refluível!');
+    } catch (conversionError) {
+      console.warn('Conversão para EPUB indisponível ou falhou. Abrindo no leitor de PDF original:', conversionError);
+      Utils.showToast('⚠️ Otimização indisponível. Abrindo PDF original...');
+
+      // Fallback automático para o leitor de PDF nativo
+      this.currentType = 'pdf';
+      await this.loadPDF(book.download_url, readerContent);
+    }
+  },
+
+  /**
    * Close the reader
    */
   close() {
@@ -72,6 +122,12 @@ const Reader = {
     readerView.classList.remove('active');
     readerView.classList.remove('night-mode');
     document.body.style.overflow = '';
+
+    // Revoga blob URL para liberar memória
+    if (this.activeBlobUrl) {
+      URL.revokeObjectURL(this.activeBlobUrl);
+      this.activeBlobUrl = null;
+    }
 
     // Remove Ctrl+Scroll handler
     if (this._wheelZoomHandler) {
@@ -601,8 +657,17 @@ const Reader = {
   downloadBook() {
     if (!this.currentBook) return;
     const a = document.createElement('a');
-    a.href = this.currentBook.download_url;
-    a.download = this.currentBook.name;
+
+    // Se estiver lendo a versão convertida em EPUB, permite baixar o EPUB gerado
+    if (this.activeBlobUrl && this.currentType === 'epub') {
+      a.href = this.activeBlobUrl;
+      const baseName = this.currentBook.name.replace(/\.[^/.]+$/, '');
+      a.download = `${baseName}.epub`;
+    } else {
+      a.href = this.currentBook.download_url;
+      a.download = this.currentBook.name;
+    }
+
     a.target = '_blank';
     document.body.appendChild(a);
     a.click();

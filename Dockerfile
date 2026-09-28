@@ -1,25 +1,42 @@
-# ============================================
-# Livraria Tech — Dockerfile
-# Ultra leve com Nginx Alpine (ARM64 compatível)
-# ============================================
-FROM nginx:alpine
+# ==============================================================================
+# Livraria Tech — Dockerfile Único (Node.js 20 + Calibre CLI)
+# Compatível com ARM64 / AMD64 (Oracle Cloud VPS / Coolify)
+# ==============================================================================
+FROM node:20-slim
 
-# Remove default config
-RUN rm /etc/nginx/conf.d/default.conf
+# Evita prompts interativos durante a instalação de pacotes e configura Calibre/Qt para modo headless
+ENV DEBIAN_FRONTEND=noninteractive \
+    QT_QPA_PLATFORM=offscreen \
+    CALIBRE_TEMP_DIR=/tmp \
+    NODE_ENV=production \
+    PORT=3000 \
+    CACHE_DIR=/app/cache
 
-# Copy nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Instala Calibre (para o binário ebook-convert), fontes do sistema e curl para o healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    calibre \
+    fonts-liberation \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy application files
-COPY index.html /usr/share/nginx/html/
-COPY css/ /usr/share/nginx/html/css/
-COPY js/ /usr/share/nginx/html/js/
+WORKDIR /app
 
-# Expose port
-EXPOSE 80
+# Copia manifests de pacotes primeiro para otimizar cache de camadas Docker
+COPY package*.json ./
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost/health || exit 1
+# Instala dependências de produção do Node.js
+RUN npm install --omit=dev
 
-CMD ["nginx", "-g", "daemon off;"]
+# Copia todos os arquivos do projeto (server.js, index.html, js, css, etc.)
+COPY . .
+
+# Cria pasta de cache persistente (mapeada como volume no Coolify)
+RUN mkdir -p /app/cache
+
+EXPOSE 3000
+
+# Verificação de integridade do container
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:3000/health || exit 1
+
+CMD ["node", "server.js"]
