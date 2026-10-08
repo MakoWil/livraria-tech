@@ -201,12 +201,13 @@ const AIChat = {
       if (isUser) {
         html = Utils.escapeHtml(m.text).replace(/\n/g, '<br>');
       } else {
-        // Renderiza Markdown para respostas da IA com sanitização DOMPurify
-        if (window.marked && window.DOMPurify) {
+        if (m.loading && !m.text) {
+          html = '<span style="color:var(--text-tertiary); font-style:italic;">✨ Digitando resposta...</span>';
+        } else if (window.marked && window.DOMPurify) {
           const raw = marked.parse(m.text || '');
           html = DOMPurify.sanitize(raw);
         } else {
-          html = Utils.escapeHtml(m.text).replace(/\n/g, '<br>');
+          html = Utils.escapeHtml(m.text || '').replace(/\n/g, '<br>');
         }
       }
 

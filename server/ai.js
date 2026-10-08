@@ -162,23 +162,36 @@ router.post('/chat', async (req, res) => {
   const controller = new AbortController();
   req.on('close', () => controller.abort());
 
-  const primary = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
-  const fallback = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.0-flash';
+  const CANDIDATE_MODELS = Array.from(new Set([
+    process.env.GEMINI_MODEL,
+    'gemini-1.5-flash',
+    'gemini-2.0-flash',
+    'gemini-2.5-flash',
+    'gemini-1.5-pro'
+  ].filter(Boolean)));
 
-  let upstream;
-  try {
-    upstream = await callGemini(primary, payload, controller.signal);
-  } catch (err) {
-    if (controller.signal.aborted) return res.end();
-    console.warn(`[AI] ${err.message} — tentando fallback ${fallback}`, err.details || '');
+  let upstream = null;
+  let lastErr = null;
+
+  for (const model of CANDIDATE_MODELS) {
     try {
-      upstream = await callGemini(fallback, payload, controller.signal);
-    } catch (err2) {
+      console.log(`[AI] Tentando modelo Gemini: ${model}`);
+      upstream = await callGemini(model, payload, controller.signal);
+      if (upstream && upstream.ok) {
+        console.log(`[AI] Sucesso com modelo Gemini: ${model}`);
+        break;
+      }
+    } catch (err) {
       if (controller.signal.aborted) return res.end();
-      console.error('[AI] Falha no fallback:', err2.message, err2.details || '');
-      send({ error: err2.details || err2.message || 'Não foi possível falar com a IA agora.' });
-      return res.end();
+      lastErr = err;
+      console.warn(`[AI] Falha com modelo ${model}: ${err.message}`, err.details || '');
     }
+  }
+
+  if (!upstream || !upstream.body) {
+    console.error('[AI] Todos os modelos falharam:', lastErr?.message, lastErr?.details || '');
+    send({ error: lastErr?.details || lastErr?.message || 'Falha ao conectar com o assistente Gemini.' });
+    return res.end();
   }
 
   try {
