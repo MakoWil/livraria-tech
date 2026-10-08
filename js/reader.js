@@ -191,19 +191,33 @@ const Reader = {
 
     const totalPages = this.pdfDoc.numPages;
 
+    // Obtém dimensões da primeira página para estruturar os wrappers
+    let sampleWidth = 620;
+    let sampleHeight = 880;
+    try {
+      const firstPage = await this.pdfDoc.getPage(1);
+      const sampleVp = firstPage.getViewport({ scale: this.pdfScale });
+      sampleWidth = Math.round(sampleVp.width);
+      sampleHeight = Math.round(sampleVp.height);
+    } catch (e) {
+      console.warn('Aviso ao obter dimensões da página 1:', e);
+    }
+
     container.innerHTML = `<div class="pdf-container" id="pdf-pages"></div>`;
     const pagesContainer = document.getElementById('pdf-pages');
 
     const progress = Store.getProgress(this.currentBook.name);
-    let scrollToPage = progress ? progress.page : 1;
+    let scrollToPage = progress && progress.page ? Math.min(Math.max(progress.page, 1), totalPages) : 1;
 
     this.pdfPages = [];
 
-    // Cria as cascas (wrappers) de cada página com canvas + camada de texto
+    // Cria as cascas (wrappers) de cada página com dimensões pré-estabelecidas
     for (let i = 1; i <= totalPages; i++) {
       const pageWrapper = document.createElement('div');
       pageWrapper.className = 'pdf-page-wrapper';
       pageWrapper.dataset.page = i;
+      pageWrapper.style.width = `${sampleWidth}px`;
+      pageWrapper.style.minHeight = `${sampleHeight}px`;
 
       const canvas = document.createElement('canvas');
       canvas.className = 'pdf-page-canvas';
@@ -221,28 +235,38 @@ const Reader = {
         canvas,
         textLayer,
         page: null,
-        rendered: false
+        rendered: false,
+        rendering: false
       });
     }
 
-    // Observer de interseção para renderizar apenas as páginas visíveis (economia de memória no celular/tablet)
+    // Observer de interseção para renderizar páginas conforme o scroll
     this.setupPDFIntersectionObserver();
 
-    // Scroll para a última posição
+    // Renderiza a página inicial e as adjacentes imediatamente
+    await this.renderPDFPage(scrollToPage);
+    if (scrollToPage + 1 <= totalPages) {
+      this.renderPDFPage(scrollToPage + 1);
+    }
+    if (scrollToPage > 1) {
+      this.renderPDFPage(1);
+    }
+
+    // Scroll para a última posição salva
     if (scrollToPage > 1) {
       setTimeout(() => {
         const target = pagesContainer.querySelector(`[data-page="${scrollToPage}"]`);
         if (target) {
           target.scrollIntoView({ behavior: 'instant', block: 'start' });
         }
-      }, 100);
+      }, 60);
     }
 
     // Scroll progress tracker
     const readerContent = document.getElementById('reader-content');
     readerContent.addEventListener('scroll', Utils.debounce(() => {
       this.updatePDFProgress(readerContent, totalPages);
-    }, 400));
+    }, 300));
 
     // Captura seleção de texto dentro do PDF para exibir toolbar flutuante
     this.setupPDFTextSelection(pagesContainer);
@@ -272,7 +296,7 @@ const Reader = {
       });
     }, {
       root: document.getElementById('reader-content'),
-      rootMargin: '400px 0px 400px 0px' // Pré-renderiza a próxima página antes do usuário chegar
+      rootMargin: '600px 0px 600px 0px' // Pré-renderiza com margem ampla
     });
 
     this.pdfPages.forEach(p => observer.observe(p.wrapper));
@@ -280,8 +304,8 @@ const Reader = {
 
   async renderPDFPage(pageNum) {
     const item = this.pdfPages[pageNum - 1];
-    if (!item || item.rendered) return;
-    item.rendered = true;
+    if (!item || item.rendered || item.rendering) return;
+    item.rendering = true;
 
     try {
       if (!item.page) {
@@ -293,6 +317,7 @@ const Reader = {
 
       item.wrapper.style.width = `${viewport.width}px`;
       item.wrapper.style.height = `${viewport.height}px`;
+      item.wrapper.style.minHeight = `${viewport.height}px`;
 
       item.canvas.width = Math.floor(viewport.width * outputScale);
       item.canvas.height = Math.floor(viewport.height * outputScale);
@@ -307,25 +332,32 @@ const Reader = {
         viewport
       };
       await item.page.render(renderContext).promise;
+      item.rendered = true;
 
       // Renderiza Camada de Texto para SELEÇÃO DE TEXTO
-      item.textLayer.innerHTML = '';
-      item.textLayer.style.width = `${viewport.width}px`;
-      item.textLayer.style.height = `${viewport.height}px`;
+      try {
+        item.textLayer.innerHTML = '';
+        item.textLayer.style.width = `${viewport.width}px`;
+        item.textLayer.style.height = `${viewport.height}px`;
 
-      const textContent = await item.page.getTextContent();
-      if (pdfjsLib.renderTextLayer) {
-        await pdfjsLib.renderTextLayer({
-          textContentSource: textContent,
-          container: item.textLayer,
-          viewport,
-          textDivs: []
-        }).promise;
+        const textContent = await item.page.getTextContent();
+        if (pdfjsLib.renderTextLayer) {
+          await pdfjsLib.renderTextLayer({
+            textContentSource: textContent,
+            container: item.textLayer,
+            viewport: viewport,
+            textDivs: []
+          }).promise;
+        }
+      } catch (textErr) {
+        console.warn(`[PDF] Camada de texto da página ${pageNum} ignorada:`, textErr);
       }
     } catch (err) {
       if (err?.name !== 'RenderingCancelledException') {
         console.warn(`Erro ao renderizar página PDF ${pageNum}:`, err);
       }
+    } finally {
+      item.rendering = false;
     }
   },
 
