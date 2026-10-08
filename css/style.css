@@ -1349,6 +1349,13 @@ body {
   flex-direction: column;
   gap: 4px;
   z-index: 50;
+  transition: right 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.reader-view.ai-open .zoom-controls,
+.reader-body:has(.ai-panel.open) ~ .zoom-controls,
+.reader-view:has(.ai-panel.open) .zoom-controls {
+  right: 444px;
 }
 
 .zoom-controls button {

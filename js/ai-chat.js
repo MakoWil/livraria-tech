@@ -103,8 +103,10 @@ const AIChat = {
     this.isOpen = true;
     const panel = document.getElementById('ai-panel');
     const toggleBtn = document.getElementById('reader-ai-toggle');
+    const readerView = document.getElementById('reader-view');
     panel?.classList.add('open');
     toggleBtn?.classList.add('active');
+    readerView?.classList.add('ai-open');
 
     // Se estiver vazio, adiciona mensagem inicial de boas-vindas do tutor
     if (this.messages.length === 0) {
@@ -126,8 +128,10 @@ const AIChat = {
     this.isOpen = false;
     const panel = document.getElementById('ai-panel');
     const toggleBtn = document.getElementById('reader-ai-toggle');
+    const readerView = document.getElementById('reader-view');
     panel?.classList.remove('open');
     toggleBtn?.classList.remove('active');
+    readerView?.classList.remove('ai-open');
   },
 
   clearChat() {

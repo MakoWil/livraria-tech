@@ -50,18 +50,30 @@ function buildSystemPrompt(bookTitle, userName) {
 }
 
 /**
- * Faz a chamada streaming ao Gemini e retorna a Response (ou lança erro)
+ * Faz a chamada streaming ao Gemini com timeout e retorna a Response (ou lança erro)
  */
 async function callGemini(model, payload, signal) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    const err = new Error('GEMINI_API_KEY não configurada no servidor.');
+    err.status = 503;
+    throw err;
+  }
+
+  // Timeout de 25s por chamada para nunca prender a conexão
+  const timeoutSignal = AbortSignal.timeout(25000);
+  const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+
   const res = await fetch(`${API_BASE}/${model}:streamGenerateContent?alt=sse`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-goog-api-key': process.env.GEMINI_API_KEY
+      'x-goog-api-key': apiKey
     },
     body: JSON.stringify(payload),
-    signal
+    signal: combinedSignal
   });
+
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     const err = new Error(`Gemini ${model} respondeu ${res.status}`);
@@ -78,10 +90,10 @@ async function callGemini(model, payload, signal) {
  */
 router.post('/chat', async (req, res) => {
   if (!process.env.GEMINI_API_KEY) {
-    return res.status(503).json({ error: 'Assistente de IA não configurado no servidor.' });
+    return res.status(503).json({ error: 'Assistente de IA não configurado no servidor (chave GEMINI_API_KEY ausente).' });
   }
   if (rateLimited(req.user.id)) {
-    return res.status(429).json({ error: 'Muitas perguntas em pouco tempo. Aguarde alguns minutos.' });
+    return res.status(429).json({ error: 'Muitas perguntas em pouco tempo. Aguarde alguns instantes.' });
   }
 
   const { bookTitle, messages, selection, pageContext, pageLabel } = req.body || {};
@@ -119,35 +131,34 @@ router.post('/chat', async (req, res) => {
   const controller = new AbortController();
   req.on('close', () => controller.abort());
 
-  const primary = process.env.GEMINI_MODEL || 'gemini-flash-latest';
-  const fallback = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash';
+  // Inicia SSE imediatamente para o cliente para evitar timeout 524 no Cloudflare / proxy
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.write(': connected\n\n');
+
+  const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
+  const primary = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+  const fallback = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.0-flash';
 
   let upstream;
   try {
     upstream = await callGemini(primary, payload, controller.signal);
   } catch (err) {
-    if (controller.signal.aborted) return;
+    if (controller.signal.aborted) return res.end();
     console.warn(`[AI] ${err.message} — tentando fallback ${fallback}`, err.details || '');
     try {
       upstream = await callGemini(fallback, payload, controller.signal);
     } catch (err2) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) return res.end();
       console.error('[AI] Falha no fallback:', err2.message, err2.details || '');
-      const status = err2.status === 429 ? 429 : 502;
-      return res.status(status).json({
-        error: status === 429 ? 'Limite da IA atingido. Tente novamente em instantes.' : 'Não foi possível falar com a IA agora.'
-      });
+      send({ error: err2.details || err2.message || 'Não foi possível falar com a IA agora.' });
+      return res.end();
     }
   }
-
-  // Inicia SSE para o cliente
-  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no'); // evita buffer em proxies (nginx/traefik)
-  res.flushHeaders?.();
-
-  const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
 
   try {
     const decoder = new TextDecoder();
