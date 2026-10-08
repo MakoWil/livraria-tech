@@ -1,0 +1,187 @@
+/* ============================================
+   LIVRARIA TECH — Assistente de Leitura (Gemini)
+   Streaming via Server-Sent Events. A chave fica só no servidor.
+   ============================================ */
+
+const express = require('express');
+const { requireAuth } = require('./auth');
+
+const router = express.Router();
+router.use(requireAuth);
+
+const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const MAX_HISTORY = 20;          // mensagens anteriores enviadas ao modelo
+const MAX_CONTEXT_CHARS = 14000; // texto da página atual
+const MAX_SELECTION_CHARS = 6000;
+
+/* ------------------------------------------
+   Rate limit simples em memória (por usuário)
+   ------------------------------------------ */
+const RATE_WINDOW_MS = 5 * 60 * 1000;
+const RATE_MAX = 40;
+const rateMap = new Map();
+
+function rateLimited(userId) {
+  const now = Date.now();
+  const list = (rateMap.get(userId) || []).filter(t => now - t < RATE_WINDOW_MS);
+  if (list.length >= RATE_MAX) {
+    rateMap.set(userId, list);
+    return true;
+  }
+  list.push(now);
+  rateMap.set(userId, list);
+  return false;
+}
+
+function buildSystemPrompt(bookTitle, userName) {
+  return [
+    'Você é o "Tutor Livraria Tech", um assistente de leitura especialista em programação e tecnologia.',
+    `O usuário${userName ? ` (${userName})` : ''} está lendo o livro "${bookTitle || 'desconhecido'}".`,
+    'Seu papel:',
+    '1. Ajudar a ENTENDER o conteúdo: explicar conceitos, termos, trechos de código e o raciocínio do autor com clareza e exemplos.',
+    '2. Ajudar a CRIAR em cima do livro: exercícios, resumos, mapas mentais, flashcards, projetos práticos, código de exemplo e variações.',
+    'Regras:',
+    '- Responda sempre em português do Brasil, a menos que o usuário peça outro idioma.',
+    '- Use Markdown (títulos curtos, listas, **negrito**, blocos de código com a linguagem indicada).',
+    '- Seja didático e direto; o usuário costuma ler no celular/tablet, então prefira respostas objetivas e bem estruturadas.',
+    '- Quando houver "TRECHO SELECIONADO" ou "CONTEXTO DA PÁGINA", baseie-se nele e cite-o quando útil.',
+    '- Se algo não estiver no trecho, deixe claro que é conhecimento complementar.'
+  ].join('\n');
+}
+
+/**
+ * Faz a chamada streaming ao Gemini e retorna a Response (ou lança erro)
+ */
+async function callGemini(model, payload, signal) {
+  const res = await fetch(`${API_BASE}/${model}:streamGenerateContent?alt=sse`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': process.env.GEMINI_API_KEY
+    },
+    body: JSON.stringify(payload),
+    signal
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    const err = new Error(`Gemini ${model} respondeu ${res.status}`);
+    err.status = res.status;
+    err.details = text.slice(0, 500);
+    throw err;
+  }
+  return res;
+}
+
+/**
+ * POST /api/ai/chat
+ * body: { bookTitle, messages:[{role:'user'|'model', text}], selection?, pageContext?, pageLabel? }
+ */
+router.post('/chat', async (req, res) => {
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(503).json({ error: 'Assistente de IA não configurado no servidor.' });
+  }
+  if (rateLimited(req.user.id)) {
+    return res.status(429).json({ error: 'Muitas perguntas em pouco tempo. Aguarde alguns minutos.' });
+  }
+
+  const { bookTitle, messages, selection, pageContext, pageLabel } = req.body || {};
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'Nenhuma mensagem enviada.' });
+  }
+
+  // Monta histórico (limitado) no formato do Gemini
+  const history = messages.slice(-MAX_HISTORY).map(m => ({
+    role: m.role === 'model' ? 'model' : 'user',
+    parts: [{ text: String(m.text || '').slice(0, 8000) }]
+  })).filter(m => m.parts[0].text);
+
+  // Anexa contexto à última mensagem do usuário
+  const last = history[history.length - 1];
+  if (last && last.role === 'user') {
+    const extras = [];
+    if (pageContext) {
+      extras.push(`CONTEXTO DA PÁGINA${pageLabel ? ` (${pageLabel})` : ''}:\n"""\n${String(pageContext).slice(0, MAX_CONTEXT_CHARS)}\n"""`);
+    }
+    if (selection) {
+      extras.push(`TRECHO SELECIONADO:\n"""\n${String(selection).slice(0, MAX_SELECTION_CHARS)}\n"""`);
+    }
+    if (extras.length) {
+      last.parts[0].text = `${extras.join('\n\n')}\n\nPERGUNTA:\n${last.parts[0].text}`;
+    }
+  }
+
+  const payload = {
+    systemInstruction: { parts: [{ text: buildSystemPrompt(bookTitle, req.user.name) }] },
+    contents: history,
+    generationConfig: { temperature: 0.7, maxOutputTokens: 8192 }
+  };
+
+  const controller = new AbortController();
+  req.on('close', () => controller.abort());
+
+  const primary = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+  const fallback = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash';
+
+  let upstream;
+  try {
+    upstream = await callGemini(primary, payload, controller.signal);
+  } catch (err) {
+    if (controller.signal.aborted) return;
+    console.warn(`[AI] ${err.message} — tentando fallback ${fallback}`, err.details || '');
+    try {
+      upstream = await callGemini(fallback, payload, controller.signal);
+    } catch (err2) {
+      if (controller.signal.aborted) return;
+      console.error('[AI] Falha no fallback:', err2.message, err2.details || '');
+      const status = err2.status === 429 ? 429 : 502;
+      return res.status(status).json({
+        error: status === 429 ? 'Limite da IA atingido. Tente novamente em instantes.' : 'Não foi possível falar com a IA agora.'
+      });
+    }
+  }
+
+  // Inicia SSE para o cliente
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // evita buffer em proxies (nginx/traefik)
+  res.flushHeaders?.();
+
+  const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
+  try {
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for await (const chunk of upstream.body) {
+      buffer += decoder.decode(chunk, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line.startsWith('data:')) continue;
+        const json = line.slice(5).trim();
+        if (!json) continue;
+        try {
+          const data = JSON.parse(json);
+          const parts = data?.candidates?.[0]?.content?.parts || [];
+          const text = parts.filter(p => !p.thought && p.text).map(p => p.text).join('');
+          if (text) send({ text });
+          const finish = data?.candidates?.[0]?.finishReason;
+          if (finish && finish !== 'STOP' && finish !== 'MAX_TOKENS') {
+            send({ warning: `Resposta interrompida (${finish}).` });
+          }
+        } catch (_) { /* linha parcial */ }
+      }
+    }
+    send({ done: true });
+  } catch (err) {
+    if (!controller.signal.aborted) {
+      console.error('[AI] Erro no streaming:', err.message);
+      send({ error: 'A conexão com a IA foi interrompida.' });
+    }
+  } finally {
+    res.end();
+  }
+});
+
+module.exports = router;

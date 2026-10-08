@@ -12,6 +12,12 @@ services:
       - PORT=80
       - CACHE_DIR=/app/cache
       - NODE_ENV=production
+      - PUBLIC_URL=${PUBLIC_URL:-https://livraria.mwtech.qzz.io}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-flash-latest}
+      - GEMINI_FALLBACK_MODEL=${GEMINI_FALLBACK_MODEL:-gemini-2.5-flash}
     volumes:
       - livraria_cache:/app/cache
     healthcheck:

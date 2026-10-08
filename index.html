@@ -2,15 +2,22 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-  <meta name="description" content="Livraria Tech — Biblioteca digital gratuita com livros de programação e tecnologia. Leia online em PDF e EPUB.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+  <meta name="description" content="Livraria Tech — Biblioteca digital gratuita com livros de programação e tecnologia. Leia online, salve seu progresso na nuvem, faça anotações e estude com um tutor de IA.">
   <meta name="theme-color" content="#4f6ef7">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <title>Livraria Tech — Biblioteca Digital</title>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Livraria Tech">
+  <title>Livraria Tech — Biblioteca Digital com Tutor de IA</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png">
+  <link rel="apple-touch-icon" href="/assets/icon-180.png">
 
   <!-- Styles -->
-  <link rel="stylesheet" href="css/style.css?v=1.3.1">
+  <link rel="stylesheet" href="/css/style.css?v=2.0.0">
 
   <!-- PDF.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -18,142 +25,264 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
 
-  <!-- ePub.js -->
+  <!-- JSZip (requerido pelo ePub.js para abrir arquivos binários/blob) + ePub.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/epub.js/0.3.93/epub.min.js"></script>
 
-  <!-- Favicon (emoji-based) -->
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+  <!-- Markdown + sanitização para respostas da IA -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 </head>
-<body>
+<body class="is-booting">
   <!-- ============================================
-       HEADER
+       SPLASH (enquanto verifica sessão)
        ============================================ -->
-  <header class="header">
-    <div class="header-content">
-      <!-- Logo -->
-      <a href="#" class="logo" onclick="event.preventDefault(); location.reload();">
-        <div class="logo-icon">📚</div>
-        <div class="logo-text">Livraria<span>Tech</span></div>
-      </a>
+  <div class="splash" id="splash" aria-hidden="true">
+    <img src="/assets/icon-192.png" alt="" class="splash-logo">
+    <div class="loading-spinner"></div>
+  </div>
 
-      <!-- Search -->
-      <div class="search-container">
-        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="8"></circle>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        </svg>
-        <input
-          type="text"
-          id="search-input"
-          class="search-input"
-          placeholder="Buscar livros..."
-          autocomplete="off"
-          aria-label="Buscar livros"
-        >
-      </div>
-
-      <!-- Header Actions -->
-      <div class="header-actions">
-        <button class="btn-icon" id="theme-toggle" title="Alternar tema" aria-label="Alternar tema">🌙</button>
-      </div>
+  <!-- ============================================
+       LOGIN SCREEN
+       ============================================ -->
+  <section class="login-screen" id="login-screen" aria-labelledby="login-title" hidden>
+    <div class="login-bg">
+      <span class="blob blob-1"></span>
+      <span class="blob blob-2"></span>
+      <span class="blob blob-3"></span>
     </div>
-  </header>
+
+    <div class="login-card">
+      <img src="/assets/icon-192.png" alt="Livraria Tech" class="login-logo">
+      <h1 class="login-title" id="login-title">Livraria<span>Tech</span></h1>
+      <p class="login-subtitle">Sua biblioteca de tecnologia, em qualquer tela.</p>
+
+      <ul class="login-features">
+        <li><span class="feat-icon">☁️</span><div><strong>Progresso na nuvem</strong><small>Continue de onde parou no celular, tablet ou PC</small></div></li>
+        <li><span class="feat-icon">✨</span><div><strong>Tutor de IA</strong><small>Selecione um trecho e peça explicações ou exercícios</small></div></li>
+        <li><span class="feat-icon">📝</span><div><strong>Marcadores e notas</strong><small>Suas observações salvas em cada livro</small></div></li>
+      </ul>
+
+      <button class="btn-google" id="btn-google-login" type="button">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+        <span>Entrar com Google</span>
+      </button>
+
+      <p class="login-error" id="login-error" role="alert" hidden></p>
+      <p class="login-footnote">Gratuito. Usamos sua conta Google apenas para identificar você e salvar seu progresso.</p>
+    </div>
+  </section>
 
   <!-- ============================================
-       MAIN CONTENT — Book Dashboard
+       APP SHELL
        ============================================ -->
-  <main class="main">
-    <div class="container">
-      <!-- Stats Bar -->
-      <div class="stats-bar">
-        <div class="stats-text" id="stats-count">Carregando...</div>
-        <div class="stats-actions">
-          <button class="favorites-filter-btn" id="favorites-filter-btn" onclick="App.toggleFavoritesFilter()" title="Filtrar favoritos" aria-label="Filtrar favoritos">
-            ⭐ <span>Favoritos</span>
-          </button>
-          <div class="view-toggle">
-            <button class="view-btn active" data-view="grid" title="Grade" aria-label="Visualização em grade">▦</button>
-            <button class="view-btn" data-view="list" title="Lista" aria-label="Visualização em lista">☰</button>
+  <div id="app-shell" hidden>
+    <!-- HEADER -->
+    <header class="header">
+      <div class="header-content">
+        <a href="/" class="logo" aria-label="Livraria Tech — início">
+          <img src="/assets/icon-192.png" alt="" class="logo-icon-img">
+          <div class="logo-text">Livraria<span>Tech</span></div>
+        </a>
+
+        <div class="search-container">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="search" id="search-input" class="search-input" placeholder="Buscar livros..." autocomplete="off" aria-label="Buscar livros">
+        </div>
+
+        <div class="header-actions">
+          <button class="btn-icon" id="theme-toggle" title="Alternar tema" aria-label="Alternar tema">🌙</button>
+          <div class="user-menu">
+            <button class="user-avatar-btn" id="user-avatar-btn" aria-haspopup="true" aria-expanded="false" aria-label="Menu do usuário">
+              <img id="user-avatar" alt="" referrerpolicy="no-referrer">
+              <span id="user-initial" class="user-initial"></span>
+            </button>
+            <div class="user-dropdown" id="user-dropdown" role="menu">
+              <div class="user-dropdown-head">
+                <div class="user-name" id="user-name"></div>
+                <div class="user-email" id="user-email"></div>
+              </div>
+              <div class="user-stats" id="user-stats"></div>
+              <button class="user-dropdown-item danger" id="btn-logout" role="menuitem">🚪 Sair da conta</button>
+            </div>
           </div>
         </div>
       </div>
+    </header>
 
-      <!-- Favorites Carousel Section (Featured / Recommended - Image 2 style) -->
-      <section class="favorites-section" id="favorites-section" style="display: none;">
-        <div class="favorites-section-header">
-          <h2 class="favorites-section-title">⭐ Meus Favoritos</h2>
-          <div class="carousel-nav">
-            <button class="carousel-nav-btn" onclick="App.scrollFavorites(-340)" title="Anterior">‹</button>
-            <button class="carousel-nav-btn" onclick="App.scrollFavorites(340)" title="Próximo">›</button>
+    <!-- MAIN -->
+    <main class="main">
+      <div class="container">
+        <h1 class="visually-hidden">Livraria Tech — Biblioteca Digital</h1>
+
+        <!-- Greeting -->
+        <div class="greeting" id="greeting"></div>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+          <div class="stats-text" id="stats-count">Carregando...</div>
+          <div class="stats-actions">
+            <button class="favorites-filter-btn" id="favorites-filter-btn" title="Filtrar favoritos" aria-label="Filtrar favoritos">
+              ⭐ <span>Favoritos</span>
+            </button>
+            <div class="view-toggle">
+              <button class="view-btn active" data-view="grid" title="Grade" aria-label="Visualização em grade">▦</button>
+              <button class="view-btn" data-view="list" title="Lista" aria-label="Visualização em lista">☰</button>
+            </div>
           </div>
         </div>
-        <div class="favorites-carousel" id="favorites-carousel">
-          <!-- Dynamically populated favorite cards -->
+
+        <!-- Continue Reading -->
+        <section class="favorites-section" id="continue-section" style="display: none;">
+          <div class="favorites-section-header">
+            <h2 class="favorites-section-title">📖 Continuar lendo</h2>
+            <div class="carousel-nav">
+              <button class="carousel-nav-btn" data-scroll="continue-carousel" data-dir="-1" title="Anterior">‹</button>
+              <button class="carousel-nav-btn" data-scroll="continue-carousel" data-dir="1" title="Próximo">›</button>
+            </div>
+          </div>
+          <div class="favorites-carousel" id="continue-carousel"></div>
+        </section>
+
+        <!-- Favorites Carousel -->
+        <section class="favorites-section" id="favorites-section" style="display: none;">
+          <div class="favorites-section-header">
+            <h2 class="favorites-section-title">⭐ Meus Favoritos</h2>
+            <div class="carousel-nav">
+              <button class="carousel-nav-btn" data-scroll="favorites-carousel" data-dir="-1" title="Anterior">‹</button>
+              <button class="carousel-nav-btn" data-scroll="favorites-carousel" data-dir="1" title="Próximo">›</button>
+            </div>
+          </div>
+          <div class="favorites-carousel" id="favorites-carousel"></div>
+        </section>
+
+        <div class="catalog-header" id="catalog-header">
+          <h2 class="catalog-title">📚 Todos os Livros</h2>
         </div>
-      </section>
 
-      <!-- Section Title for All Books -->
-      <div class="catalog-header" id="catalog-header" style="margin-bottom: 16px;">
-        <h2 class="catalog-title" style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">📚 Todos os Livros</h2>
+        <div id="books-container"></div>
       </div>
-
-      <!-- Books Container -->
-      <div id="books-container">
-        <!-- Dynamic content -->
-      </div>
-    </div>
-  </main>
+    </main>
+  </div>
 
   <!-- ============================================
        READER VIEW (fullscreen overlay)
        ============================================ -->
-  <div class="reader-view" id="reader-view">
-    <!-- Reader Header -->
+  <div class="reader-view" id="reader-view" role="dialog" aria-modal="true" aria-labelledby="reader-title">
     <div class="reader-header">
       <button class="reader-btn-icon" id="reader-close" title="Voltar" aria-label="Voltar à biblioteca">←</button>
-      <div class="reader-title" id="reader-title">Carregando...</div>
-      <button class="reader-btn" id="reader-bookmark-add" title="Adicionar marcador">📑 <span>Marcar</span></button>
-      <button class="reader-btn" id="reader-bookmarks-toggle" title="Ver marcadores">🔖 <span>Marcadores</span></button>
-      <button class="reader-btn-icon" id="reader-night" title="Modo noturno" aria-label="Alternar modo noturno">🌙</button>
-      <button class="reader-btn-icon" id="font-decrease" title="Diminuir fonte/zoom" aria-label="Diminuir fonte/zoom">A-</button>
-      <button class="reader-btn-icon" id="font-increase" title="Aumentar fonte/zoom" aria-label="Aumentar fonte/zoom">A+</button>
-      <button class="reader-btn accent" id="reader-download" title="Download">📥 <span>Download</span></button>
+
+      <div class="reader-title-wrap">
+        <div class="reader-title" id="reader-title">Carregando...</div>
+        <div class="reader-subtitle" id="reader-subtitle"></div>
+      </div>
+
+      <button class="reader-btn ai-btn" id="reader-ai-toggle" title="Tutor de IA" aria-label="Abrir tutor de IA">✨ <span>Tutor IA</span></button>
+
+      <div class="reader-tools" id="reader-tools">
+        <button class="reader-btn" id="reader-bookmark-add" title="Adicionar marcador">📑 <span>Marcar</span></button>
+        <button class="reader-btn" id="reader-bookmarks-toggle" title="Marcadores e notas">🔖 <span>Notas</span></button>
+        <button class="reader-btn" id="reader-night" title="Modo noturno" aria-label="Alternar modo noturno">🌙 <span class="tool-label">Noturno</span></button>
+        <div class="font-group">
+          <button class="reader-btn-icon" id="font-decrease" title="Diminuir fonte/zoom" aria-label="Diminuir fonte/zoom">A-</button>
+          <button class="reader-btn-icon" id="font-increase" title="Aumentar fonte/zoom" aria-label="Aumentar fonte/zoom">A+</button>
+        </div>
+        <button class="reader-btn accent" id="reader-download" title="Download">📥 <span>Download</span></button>
+      </div>
+
+      <button class="reader-btn-icon reader-more" id="reader-more" title="Mais opções" aria-label="Mais opções" aria-expanded="false">⋮</button>
     </div>
 
-    <!-- Progress Bar -->
     <div class="reader-progress">
       <div class="reader-progress-bar" id="reader-progress-bar"></div>
     </div>
 
-    <!-- Reader Content -->
-    <div class="reader-content" id="reader-content">
-      <!-- PDF or EPUB rendered here -->
+    <div class="reader-body">
+      <div class="reader-content" id="reader-content"></div>
+
+      <!-- ============ AI PANEL ============ -->
+      <aside class="ai-panel" id="ai-panel" aria-label="Tutor de IA">
+        <div class="ai-panel-handle" id="ai-panel-handle"><span></span></div>
+        <div class="ai-panel-header">
+          <div class="ai-panel-title">
+            <span class="ai-avatar">✨</span>
+            <div>
+              <h3>Tutor IA</h3>
+              <small id="ai-panel-book">Pergunte sobre o livro</small>
+            </div>
+          </div>
+          <div class="ai-panel-actions">
+            <button class="reader-btn-icon" id="ai-clear" title="Nova conversa" aria-label="Nova conversa">🗑️</button>
+            <button class="reader-btn-icon" id="ai-close" title="Fechar" aria-label="Fechar tutor">✕</button>
+          </div>
+        </div>
+
+        <div class="ai-messages" id="ai-messages" aria-live="polite"></div>
+
+        <div class="ai-composer">
+          <div class="ai-selection-chip" id="ai-selection-chip" hidden>
+            <div class="chip-label">📌 Trecho selecionado</div>
+            <div class="chip-text" id="ai-selection-text"></div>
+            <button class="chip-remove" id="ai-selection-remove" aria-label="Remover trecho">✕</button>
+          </div>
+
+          <div class="ai-quick" id="ai-quick"></div>
+
+          <label class="ai-context-toggle">
+            <input type="checkbox" id="ai-use-context" checked>
+            <span class="switch"></span>
+            <span>Usar a página atual como contexto</span>
+          </label>
+
+          <form class="ai-input-row" id="ai-form">
+            <textarea id="ai-input" rows="1" placeholder="Pergunte algo ou peça para criar algo..." aria-label="Mensagem para o tutor"></textarea>
+            <button type="submit" class="ai-send" id="ai-send" aria-label="Enviar">➤</button>
+          </form>
+        </div>
+      </aside>
     </div>
 
-    <!-- Zoom Controls (floating, for PDF inside reader-view) -->
+    <!-- Zoom Controls (PDF) -->
     <div class="zoom-controls" id="zoom-controls" style="display:none;">
       <button id="zoom-in" title="Aumentar zoom (Ctrl + Scroll ↑)" aria-label="Aumentar zoom">+</button>
-      <span class="zoom-level" id="zoom-level">120%</span>
+      <span class="zoom-level" id="zoom-level">100%</span>
       <button id="zoom-out" title="Diminuir zoom (Ctrl + Scroll ↓)" aria-label="Diminuir zoom">−</button>
+      <button id="zoom-fit" title="Ajustar à largura" aria-label="Ajustar à largura">↔</button>
     </div>
 
-    <!-- Bookmarks Panel (slide-in) -->
+    <!-- Selection toolbar -->
+    <div class="selection-bar" id="selection-bar" role="toolbar" aria-label="Ações do trecho selecionado">
+      <button data-action="ask">✨ <span>Perguntar</span></button>
+      <button data-action="explain">💡 <span>Explicar</span></button>
+      <button data-action="note">📝 <span>Anotar</span></button>
+      <button data-action="copy">📋 <span>Copiar</span></button>
+    </div>
+
+    <!-- Bookmarks & Notes Panel -->
     <div class="bookmarks-panel" id="bookmarks-panel">
       <div class="bookmarks-header">
-        <h3>📑 Marcadores</h3>
-        <button class="reader-btn-icon" id="bookmarks-close" title="Fechar" style="width:28px;height:28px;font-size:14px;">✕</button>
+        <div class="panel-tabs" role="tablist">
+          <button class="panel-tab active" data-tab="bookmarks" role="tab">📑 Marcadores <span class="tab-count" id="count-bookmarks">0</span></button>
+          <button class="panel-tab" data-tab="notes" role="tab">📝 Notas <span class="tab-count" id="count-notes">0</span></button>
+        </div>
+        <button class="reader-btn-icon" id="bookmarks-close" title="Fechar" aria-label="Fechar painel">✕</button>
       </div>
-      <div class="bookmarks-list" id="bookmarks-list">
-        <!-- Dynamic bookmarks -->
-      </div>
+      <div class="bookmarks-list" id="bookmarks-list"></div>
+      <div class="bookmarks-list" id="notes-list" hidden></div>
     </div>
   </div>
 
-  <!-- Bookmark Add Modal -->
+  <!-- Bookmark Modal -->
   <div class="bookmark-modal" id="bookmark-modal">
     <div class="bookmark-modal-content">
-      <h3>📑 Novo Marcador</h3>
+      <h3 id="bookmark-modal-title">📑 Novo Marcador</h3>
+      <label class="field-label" for="bookmark-name-input">Nome</label>
       <input type="text" id="bookmark-name-input" placeholder="Nome do marcador" maxlength="100">
+      <label class="field-label" for="bookmark-note-input">Observação <small>(opcional)</small></label>
+      <textarea id="bookmark-note-input" rows="3" placeholder="Por que essa página é importante?" maxlength="5000"></textarea>
       <div class="bookmark-modal-actions">
         <button class="btn-cancel" id="bookmark-cancel">Cancelar</button>
         <button class="btn-save" id="bookmark-save">Salvar</button>
@@ -161,12 +290,41 @@
     </div>
   </div>
 
+  <!-- Note Modal -->
+  <div class="bookmark-modal" id="note-modal">
+    <div class="bookmark-modal-content">
+      <h3 id="note-modal-title">📝 Nova Nota</h3>
+      <blockquote class="note-quote" id="note-quote"></blockquote>
+      <label class="field-label" for="note-text-input">Sua observação</label>
+      <textarea id="note-text-input" rows="4" placeholder="Escreva sua observação sobre este trecho..." maxlength="10000"></textarea>
+      <div class="bookmark-modal-actions">
+        <button class="btn-cancel" id="note-cancel">Cancelar</button>
+        <button class="btn-save" id="note-save">Salvar nota</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Download Sheet -->
+  <div class="bookmark-modal sheet" id="download-modal">
+    <div class="bookmark-modal-content download-content">
+      <div class="sheet-handle"><span></span></div>
+      <h3>📥 Baixar livro</h3>
+      <p class="download-book-name" id="download-book-name"></p>
+      <div class="download-options" id="download-options"></div>
+      <div class="bookmark-modal-actions">
+        <button class="btn-cancel" id="download-cancel">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notifications -->
-  <div class="toast-container" id="toast-container"></div>
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
 
   <!-- Scripts -->
-  <script src="js/utils.js?v=1.3.1"></script>
-  <script src="js/reader.js?v=1.3.1"></script>
-  <script src="js/app.js?v=1.3.1"></script>
+  <script src="/js/utils.js?v=2.0.0"></script>
+  <script src="/js/api.js?v=2.0.0"></script>
+  <script src="/js/reader.js?v=2.0.0"></script>
+  <script src="/js/ai-chat.js?v=2.0.0"></script>
+  <script src="/js/app.js?v=2.0.0"></script>
 </body>
 </html>

@@ -1,13 +1,15 @@
 {
   "name": "livraria-tech",
-  "version": "1.3.0",
-  "description": "Livraria Tech - Biblioteca Digital com conversão dinâmica de PDF para EPUB",
+  "version": "2.0.0",
+  "description": "Livraria Tech - Biblioteca Digital com login Google, progresso na nuvem, assistente de IA e conversão PDF/EPUB",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "dotenv": "^18.0.6",
     "express": "^4.19.2"
   },
   "engines": {

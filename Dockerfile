@@ -12,11 +12,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PORT=80 \
     CACHE_DIR=/app/cache
 
-# Instala Calibre (para o binário ebook-convert), fontes do sistema e curl para o healthcheck
+# Instala Calibre (para o binário ebook-convert), fontes do sistema, curl para o healthcheck
+# e toolchain de build (fallback caso o better-sqlite3 não tenha binário pré-compilado p/ a arquitetura)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     calibre \
     fonts-liberation \
     curl \
+    python3 \
+    make \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -30,7 +34,7 @@ RUN npm install --omit=dev
 # Copia todos os arquivos do projeto (server.js, index.html, js, css, etc.)
 COPY . .
 
-# Cria pasta de cache persistente (mapeada como volume no Coolify)
+# Cria pasta de cache persistente (mapeada como volume no Coolify) — também guarda o banco SQLite
 RUN mkdir -p /app/cache
 
 # Expõe as portas 80 e 3000 para compatibilidade universal no Coolify

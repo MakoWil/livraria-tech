@@ -48,77 +48,38 @@ const Utils = {
   },
 
   /**
-   * Save reading progress for a book
+   * Escape HTML (para conteúdo gerado pelo usuário)
    */
+  escapeHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  },
+
+  /* ==========================================
+     Progresso / Marcadores — agora persistidos no banco (via Store)
+     ========================================== */
   saveProgress(bookName, data) {
-    try {
-      const allProgress = JSON.parse(localStorage.getItem('livraria_progress') || '{}');
-      allProgress[bookName] = {
-        ...data,
-        updatedAt: new Date().toISOString()
-      };
-      localStorage.setItem('livraria_progress', JSON.stringify(allProgress));
-    } catch (e) {
-      console.warn('Erro ao salvar progresso:', e);
-    }
+    Store.saveProgress(bookName, data);
   },
 
-  /**
-   * Get reading progress for a book
-   */
   getProgress(bookName) {
-    try {
-      const allProgress = JSON.parse(localStorage.getItem('livraria_progress') || '{}');
-      return allProgress[bookName] || null;
-    } catch (e) {
-      return null;
-    }
+    return Store.getProgress(bookName);
   },
 
-  /**
-   * Save bookmarks for a book
-   */
-  saveBookmarks(bookName, bookmarks) {
-    try {
-      const allBookmarks = JSON.parse(localStorage.getItem('livraria_bookmarks') || '{}');
-      allBookmarks[bookName] = bookmarks;
-      localStorage.setItem('livraria_bookmarks', JSON.stringify(allBookmarks));
-    } catch (e) {
-      console.warn('Erro ao salvar marcadores:', e);
-    }
-  },
-
-  /**
-   * Get bookmarks for a book
-   */
   getBookmarks(bookName) {
-    try {
-      const allBookmarks = JSON.parse(localStorage.getItem('livraria_bookmarks') || '{}');
-      return allBookmarks[bookName] || [];
-    } catch (e) {
-      return [];
-    }
+    return Store.getBookmarks(bookName);
   },
 
-  /**
-   * Add a bookmark
-   */
   addBookmark(bookName, bookmark) {
-    const bookmarks = this.getBookmarks(bookName);
-    bookmark.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-    bookmark.createdAt = new Date().toISOString();
-    bookmarks.push(bookmark);
-    this.saveBookmarks(bookName, bookmarks);
-    return bookmark;
+    return Store.addBookmark(bookName, bookmark);
   },
 
-  /**
-   * Remove a bookmark
-   */
   removeBookmark(bookName, bookmarkId) {
-    const bookmarks = this.getBookmarks(bookName).filter(b => b.id !== bookmarkId);
-    this.saveBookmarks(bookName, bookmarks);
-    return bookmarks;
+    return Store.removeBookmark(bookName, bookmarkId);
   },
 
   /**
@@ -145,7 +106,7 @@ const Utils = {
       if (!raw) return null;
       const cacheEntry = JSON.parse(raw);
       if (Date.now() > cacheEntry.expiry) {
-        localStorage.removeItem(`livraria_cache_${key}`);
+        localStorage.removeItem(`livraria_v2_cache_${key}`);
         return null;
       }
       return cacheEntry.data;
@@ -201,39 +162,18 @@ const Utils = {
   },
 
   /* ==========================================
-     Favorites Management
+     Favorites Management (persistido no banco via Store)
      ========================================== */
 
-  /**
-   * Get all favorites
-   */
   getFavorites() {
-    try {
-      return JSON.parse(localStorage.getItem('livraria_favorites') || '[]');
-    } catch (e) {
-      return [];
-    }
+    return Store.getFavorites();
   },
 
-  /**
-   * Toggle favorite status for a book
-   */
   toggleFavorite(bookName) {
-    const favorites = this.getFavorites();
-    const index = favorites.indexOf(bookName);
-    if (index > -1) {
-      favorites.splice(index, 1);
-    } else {
-      favorites.push(bookName);
-    }
-    localStorage.setItem('livraria_favorites', JSON.stringify(favorites));
-    return index === -1; // returns true if it was added
+    return Store.toggleFavorite(bookName); // true se adicionou
   },
 
-  /**
-   * Check if a book is favorited
-   */
   isFavorite(bookName) {
-    return this.getFavorites().includes(bookName);
+    return Store.isFavorite(bookName);
   }
 };

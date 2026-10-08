@@ -1,50 +1,153 @@
 /* ============================================
-   LIVRARIA TECH — Main Application
-   GitHub API integration + Dashboard
+   LIVRARIA TECH — Main Application v2.0
+   Login Google + Progresso no Banco + Download EPUB/PDF
    ============================================ */
 
 const App = {
   // State
+  user: null,
   books: [],
   filteredBooks: [],
   viewMode: 'grid',
   isLoading: false,
   showFavoritesOnly: false,
   coverCache: {},
+  pendingDownloadBook: null,
 
-  // GitHub API endpoint
   API_URL: 'https://api.github.com/repos/KAYOKG/BibliotecaDev/contents/LivrosDev',
-
-  // Open Library search API
   OPENLIBRARY_SEARCH: 'https://openlibrary.org/search.json',
   OPENLIBRARY_COVER: 'https://covers.openlibrary.org/b/id/',
 
-  /**
-   * Initialize the application
-   */
-  init() {
-    // Apply saved theme
+  async init() {
+    // 1. Aplica tema antes de renderizar para evitar flicker
     const theme = Utils.getTheme();
     document.documentElement.setAttribute('data-theme', theme);
     this.updateThemeIcon(theme);
 
-    // Apply saved view mode
+    // 2. Verifica se houve erro de autenticação na URL (ex: ?auth_error=...)
+    this.checkAuthUrlErrors();
+
+    // 3. Checa autenticação do usuário
+    const user = await Auth.check();
+    document.body.classList.remove('is-booting');
+    document.getElementById('splash')?.remove();
+
+    if (!user) {
+      this.showLoginScreen();
+      return;
+    }
+
+    this.user = user;
+    this.showAppShell();
+
+    // 4. Carrega preferências e cache de capas
     this.viewMode = Utils.getViewMode();
     this.updateViewButtons();
-
-    // Load cover cache from localStorage
     this.loadCoverCache();
 
-    // Bind events
-    this.bindEvents();
+    // 5. Carrega dados do usuário (banco de dados) e migra dados legados do localStorage
+    try {
+      await Store.load();
+      const migrated = await Store.migrateLocalData();
+      if (migrated > 0) {
+        Utils.showToast(`✨ ${migrated} itens salvos sincronizados com sua conta!`);
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar dados do usuário:', e);
+    }
 
-    // Fetch books
+    // 6. Atualiza UI do usuário
+    this.renderUserProfile();
+
+    // 7. Eventos e catálogo de livros
+    this.bindEvents();
     this.fetchBooks();
   },
 
-  /**
-   * Bind all event listeners
-   */
+  checkAuthUrlErrors() {
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get('auth_error');
+    if (err) {
+      const errEl = document.getElementById('login-error');
+      if (errEl) {
+        let msg = 'Não foi possível concluir o login com o Google.';
+        if (err === 'access_denied') msg = 'Acesso cancelado pelo usuário.';
+        if (err === 'not_configured') msg = 'Credenciais do Google não configuradas no servidor.';
+        errEl.textContent = msg;
+        errEl.hidden = false;
+      }
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    const loginSuccess = params.get('login');
+    if (loginSuccess === 'ok') {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      Utils.showToast('👋 Bem-vindo de volta!');
+    }
+  },
+
+  showLoginScreen() {
+    const loginScreen = document.getElementById('login-screen');
+    const appShell = document.getElementById('app-shell');
+    if (loginScreen) loginScreen.hidden = false;
+    if (appShell) appShell.hidden = true;
+
+    document.getElementById('btn-google-login')?.addEventListener('click', () => {
+      Auth.login();
+    });
+  },
+
+  showAppShell() {
+    const loginScreen = document.getElementById('login-screen');
+    const appShell = document.getElementById('app-shell');
+    if (loginScreen) loginScreen.hidden = true;
+    if (appShell) appShell.hidden = false;
+  },
+
+  renderUserProfile() {
+    if (!this.user) return;
+
+    const avatarImg = document.getElementById('user-avatar');
+    const initialSpan = document.getElementById('user-initial');
+    const nameEl = document.getElementById('user-name');
+    const emailEl = document.getElementById('user-email');
+    const greetingEl = document.getElementById('greeting');
+
+    const firstName = (this.user.name || 'Leitor').split(' ')[0];
+    if (greetingEl) {
+      greetingEl.innerHTML = `Olá, <strong>${Utils.escapeHtml(firstName)}</strong> 👋 Boa leitura!`;
+    }
+
+    if (nameEl) nameEl.textContent = this.user.name || 'Leitor';
+    if (emailEl) emailEl.textContent = this.user.email || '';
+
+    if (this.user.picture && avatarImg) {
+      avatarImg.src = this.user.picture;
+      avatarImg.style.display = 'block';
+      if (initialSpan) initialSpan.style.display = 'none';
+    } else if (initialSpan) {
+      initialSpan.textContent = (this.user.name || 'U').charAt(0).toUpperCase();
+      initialSpan.style.display = 'flex';
+      if (avatarImg) avatarImg.style.display = 'none';
+    }
+
+    this.updateUserStats();
+  },
+
+  updateUserStats() {
+    const statsEl = document.getElementById('user-stats');
+    if (!statsEl) return;
+    const progressCount = Object.keys(Store.progress || {}).length;
+    const favCount = Store.favorites.size;
+    const notesCount = Store.getAllNotesCount();
+
+    statsEl.innerHTML = `
+      <div class="user-stat-item"><strong>${progressCount}</strong><span>Lendo</span></div>
+      <div class="user-stat-item"><strong>${favCount}</strong><span>Favoritos</span></div>
+      <div class="user-stat-item"><strong>${notesCount}</strong><span>Notas</span></div>
+    `;
+  },
+
   bindEvents() {
     // Search
     const searchInput = document.getElementById('search-input');
@@ -55,22 +158,54 @@ const App = {
     }
 
     // Theme toggle
-    const themeBtn = document.getElementById('theme-toggle');
-    if (themeBtn) {
-      themeBtn.addEventListener('click', () => this.toggleTheme());
-    }
+    document.getElementById('theme-toggle')?.addEventListener('click', () => this.toggleTheme());
+
+    // User dropdown
+    const avatarBtn = document.getElementById('user-avatar-btn');
+    const dropdown = document.getElementById('user-dropdown');
+    avatarBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = dropdown.classList.toggle('open');
+      avatarBtn.setAttribute('aria-expanded', String(open));
+      this.updateUserStats();
+    });
+
+    document.addEventListener('click', (e) => {
+      if (dropdown && !dropdown.contains(e.target) && !avatarBtn?.contains(e.target)) {
+        dropdown.classList.remove('open');
+        avatarBtn?.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    // Logout
+    document.getElementById('btn-logout')?.addEventListener('click', () => Auth.logout());
 
     // View toggle buttons
     document.querySelectorAll('.view-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        const mode = e.currentTarget.dataset.view;
-        this.setViewMode(mode);
+        this.setViewMode(e.currentTarget.dataset.view);
+      });
+    });
+
+    // Favorites filter button
+    document.getElementById('favorites-filter-btn')?.addEventListener('click', () => {
+      this.toggleFavoritesFilter();
+    });
+
+    // Carousel buttons (Continue Reading & Favorites)
+    document.querySelectorAll('.carousel-nav-btn[data-scroll]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const targetId = e.currentTarget.dataset.scroll;
+        const dir = parseInt(e.currentTarget.dataset.dir, 10) || 1;
+        const carousel = document.getElementById(targetId);
+        if (carousel) {
+          carousel.scrollBy({ left: dir * 320, behavior: 'smooth' });
+        }
       });
     });
 
     // Reader controls
     document.getElementById('reader-close')?.addEventListener('click', () => Reader.close());
-    document.getElementById('reader-download')?.addEventListener('click', () => Reader.downloadBook());
     document.getElementById('reader-night')?.addEventListener('click', () => Reader.toggleNightMode());
     document.getElementById('reader-bookmark-add')?.addEventListener('click', () => Reader.showAddBookmarkModal());
     document.getElementById('reader-bookmarks-toggle')?.addEventListener('click', () => Reader.toggleBookmarks());
@@ -85,8 +220,6 @@ const App = {
     document.getElementById('bookmark-modal')?.addEventListener('click', (e) => {
       if (e.target.id === 'bookmark-modal') Reader.closeBookmarkModal();
     });
-
-    // Bookmark name input — Enter key
     document.getElementById('bookmark-name-input')?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') Reader.confirmAddBookmark();
       if (e.key === 'Escape') Reader.closeBookmarkModal();
@@ -95,10 +228,20 @@ const App = {
     // Close bookmarks panel
     document.getElementById('bookmarks-close')?.addEventListener('click', () => Reader.closeBookmarks());
 
+    // Download modal
+    document.getElementById('download-cancel')?.addEventListener('click', () => this.closeDownloadModal());
+    document.getElementById('download-modal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'download-modal') this.closeDownloadModal();
+    });
+
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        if (document.getElementById('bookmark-modal')?.classList.contains('active')) {
+        if (document.getElementById('download-modal')?.classList.contains('active')) {
+          this.closeDownloadModal();
+        } else if (document.getElementById('note-modal')?.classList.contains('active')) {
+          Reader.closeNoteModal();
+        } else if (document.getElementById('bookmark-modal')?.classList.contains('active')) {
           Reader.closeBookmarkModal();
         } else if (document.getElementById('reader-view')?.classList.contains('active')) {
           Reader.close();
@@ -111,14 +254,10 @@ const App = {
     document.getElementById('font-decrease')?.addEventListener('click', () => Reader.decreaseFontSize());
   },
 
-  /**
-   * Fetch books from GitHub API
-   */
   async fetchBooks() {
     this.isLoading = true;
     this.renderLoading();
 
-    // Try cache first
     const cached = Utils.getCacheData('books');
     if (cached) {
       this.books = this.processBooks(cached);
@@ -133,14 +272,12 @@ const App = {
 
       if (!response.ok) {
         if (response.status === 403) {
-          throw new Error('Limite da API do GitHub atingido. Aguarde alguns minutos e tente novamente.');
+          throw new Error('Limite da API do GitHub atingido temporariamente. Aguarde alguns instantes.');
         }
         throw new Error(`Erro HTTP: ${response.status}`);
       }
 
       const data = await response.json();
-
-      // Cache the raw data
       Utils.setCacheData('books', data, 30);
 
       this.books = this.processBooks(data);
@@ -148,9 +285,7 @@ const App = {
       this.isLoading = false;
       this.renderBooks();
 
-      // Fetch covers in background
       this.fetchAllCovers();
-
     } catch (error) {
       console.error('Erro ao buscar livros:', error);
       this.isLoading = false;
@@ -158,9 +293,6 @@ const App = {
     }
   },
 
-  /**
-   * Process raw API data into book objects
-   */
   processBooks(data) {
     if (!Array.isArray(data)) return [];
 
@@ -186,9 +318,6 @@ const App = {
       .sort((a, b) => a.displayName.localeCompare(b.displayName, 'pt-BR'));
   },
 
-  /**
-   * Filter books by search query
-   */
   filterBooks(query) {
     const q = (query || '').toLowerCase().trim();
     let result = [...this.books];
@@ -201,13 +330,12 @@ const App = {
     }
 
     if (this.showFavoritesOnly) {
-      result = result.filter(book => Utils.isFavorite(book.name));
+      result = result.filter(book => Store.isFavorite(book.name));
     }
 
-    // Sort: favorites first, then alphabetically
     result.sort((a, b) => {
-      const aFav = Utils.isFavorite(a.name);
-      const bFav = Utils.isFavorite(b.name);
+      const aFav = Store.isFavorite(a.name);
+      const bFav = Store.isFavorite(b.name);
       if (aFav && !bFav) return -1;
       if (!aFav && bFav) return 1;
       return a.displayName.localeCompare(b.displayName, 'pt-BR');
@@ -217,76 +345,54 @@ const App = {
     this.renderBooks();
   },
 
-  /**
-   * Toggle favorites filter
-   */
   toggleFavoritesFilter() {
     this.showFavoritesOnly = !this.showFavoritesOnly;
     const btn = document.getElementById('favorites-filter-btn');
-    if (btn) {
-      btn.classList.toggle('active', this.showFavoritesOnly);
-    }
+    btn?.classList.toggle('active', this.showFavoritesOnly);
+
     const searchInput = document.getElementById('search-input');
     this.filterBooks(searchInput ? searchInput.value : '');
   },
 
-  /**
-   * Toggle favorite for a book
-   */
   toggleFavorite(sha, event) {
     if (event) event.stopPropagation();
     const book = this.books.find(b => b.sha === sha);
     if (!book) return;
 
-    const added = Utils.toggleFavorite(book.name);
+    const added = Store.toggleFavorite(book.name);
     Utils.showToast(added ? '⭐ Adicionado aos favoritos!' : '☆ Removido dos favoritos');
 
-    // Re-filter and re-render so favorited books rise to top automatically
     const searchInput = document.getElementById('search-input');
     this.filterBooks(searchInput ? searchInput.value : '');
+    this.updateUserStats();
   },
 
-  /**
-   * Set view mode (grid/list)
-   */
   setViewMode(mode) {
     this.viewMode = mode;
     Utils.setViewMode(mode);
     this.updateViewButtons();
 
     const grid = document.getElementById('books-grid');
-    if (grid) {
-      grid.classList.toggle('list-view', mode === 'list');
-    }
+    if (grid) grid.classList.toggle('list-view', mode === 'list');
   },
 
-  /**
-   * Update view toggle buttons
-   */
   updateViewButtons() {
     document.querySelectorAll('.view-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.view === this.viewMode);
     });
   },
 
-  /**
-   * Toggle theme
-   */
   toggleTheme() {
     const current = Utils.getTheme();
     const next = current === 'dark' ? 'light' : 'dark';
     Utils.setTheme(next);
     this.updateThemeIcon(next);
 
-    // Update epub theme if reader is open
     if (Reader.epubRendition && !Reader.nightMode) {
       Reader.applyEpubTheme(next);
     }
   },
 
-  /**
-   * Update theme icon
-   */
   updateThemeIcon(theme) {
     const btn = document.getElementById('theme-toggle');
     if (btn) {
@@ -295,53 +401,47 @@ const App = {
     }
   },
 
-  /* ==========================================
-     Render Methods
-     ========================================== */
-
-  /**
-   * Render loading state
-   */
   renderLoading() {
     const container = document.getElementById('books-container');
+    if (!container) return;
     container.innerHTML = `
       <div class="loading-container">
         <div class="loading-spinner"></div>
-        <div class="loading-text">Carregando biblioteca...</div>
+        <div class="loading-text">Carregando biblioteca digital...</div>
       </div>
     `;
   },
 
-  /**
-   * Render error state
-   */
   renderError(message) {
     const container = document.getElementById('books-container');
+    if (!container) return;
     container.innerHTML = `
       <div class="error-state">
         <div class="empty-icon">⚠️</div>
-        <div class="empty-title">Erro ao carregar</div>
-        <div class="empty-text">${message}</div>
+        <div class="empty-title">Erro ao carregar catálogo</div>
+        <div class="empty-text">${Utils.escapeHtml(message)}</div>
         <button class="btn-retry" onclick="App.fetchBooks()">🔄 Tentar novamente</button>
       </div>
     `;
-    document.getElementById('stats-count').textContent = '';
+    const statsCount = document.getElementById('stats-count');
+    if (statsCount) statsCount.textContent = '';
   },
 
-  /**
-   * Render books grid
-   */
   renderBooks() {
     const container = document.getElementById('books-container');
     const statsCount = document.getElementById('stats-count');
+    if (!container) return;
 
-    // Also render top favorites section carousel
+    // Seções de topo
+    this.renderContinueSection();
     this.renderFavoritesSection();
 
-    // Update stats
-    const favCount = this.books.filter(b => Utils.isFavorite(b.name)).length;
-    statsCount.innerHTML = `<strong>${this.filteredBooks.length}</strong> de ${this.books.length} livros` +
-      (favCount > 0 ? ` · <span style="color:var(--star-color)">⭐ ${favCount}</span>` : '');
+    // Stats
+    const favCount = this.books.filter(b => Store.isFavorite(b.name)).length;
+    if (statsCount) {
+      statsCount.innerHTML = `<strong>${this.filteredBooks.length}</strong> de ${this.books.length} livros` +
+        (favCount > 0 ? ` · <span style="color:var(--star-color)">⭐ ${favCount}</span>` : '');
+    }
 
     // Empty state
     if (this.filteredBooks.length === 0) {
@@ -355,7 +455,6 @@ const App = {
       return;
     }
 
-    // Build cards
     const listViewClass = this.viewMode === 'list' ? ' list-view' : '';
     const cardsHtml = this.filteredBooks.map(book => this.renderCard(book)).join('');
 
@@ -366,17 +465,67 @@ const App = {
     `;
   },
 
-  /**
-   * Render top favorites carousel section (Image 2 style)
-   */
+  /* ==========================================
+     Carrossel: Continuar Lendo (Baseado no Banco)
+     ========================================== */
+  renderContinueSection() {
+    const section = document.getElementById('continue-section');
+    const carousel = document.getElementById('continue-carousel');
+    if (!section || !carousel) return;
+
+    // Filtra livros que possuem progresso salvo no banco
+    const booksWithProgress = this.books
+      .map(b => ({ book: b, progress: Store.getProgress(b.name) }))
+      .filter(item => item.progress !== null)
+      .sort((a, b) => new Date(b.progress.updatedAt || 0) - new Date(a.progress.updatedAt || 0));
+
+    if (booksWithProgress.length === 0 || this.showFavoritesOnly) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.style.display = 'block';
+
+    carousel.innerHTML = booksWithProgress.map(({ book, progress }) => {
+      const coverUrl = this.coverCache[book.displayName];
+      const iconEmoji = book.extension === 'pdf' ? '📕' : '📗';
+      const percentVal = Math.round((progress.percent || 0) * 100);
+      const posLabel = progress.type === 'pdf' && progress.page
+        ? `Pág. ${progress.page}${progress.totalPages ? ` de ${progress.totalPages}` : ''}`
+        : `${percentVal}% lido`;
+
+      const coverHtml = coverUrl
+        ? `<img src="${coverUrl}" alt="Capa" class="continue-cover" onerror="this.outerHTML='<div class=&quot;continue-cover&quot;>${iconEmoji}</div>'">`
+        : `<div class="continue-cover">${iconEmoji}</div>`;
+
+      return `
+        <div class="continue-card" onclick="App.openBook('${book.sha}')">
+          ${coverHtml}
+          <div class="continue-info">
+            <div class="continue-title" title="${Utils.escapeHtml(book.displayName)}">${Utils.escapeHtml(book.displayName)}</div>
+            <div class="continue-progress-wrap">
+              <div class="continue-progress-bar" style="width: ${percentVal}%"></div>
+            </div>
+            <div class="continue-meta">
+              <span>${posLabel}</span>
+              <button class="continue-btn" onclick="event.stopPropagation(); App.openBook('${book.sha}')">Continuar ›</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  },
+
+  /* ==========================================
+     Carrossel: Meus Favoritos
+     ========================================== */
   renderFavoritesSection() {
     const section = document.getElementById('favorites-section');
     const carousel = document.getElementById('favorites-carousel');
     if (!section || !carousel) return;
 
-    const favoriteBooks = this.books.filter(b => Utils.isFavorite(b.name));
+    const favoriteBooks = this.books.filter(b => Store.isFavorite(b.name));
 
-    // Hide if no favorites or if user is filtering by search/favorites-only
     if (favoriteBooks.length === 0 || this.showFavoritesOnly) {
       section.style.display = 'none';
       return;
@@ -384,10 +533,10 @@ const App = {
 
     section.style.display = 'block';
 
-    const cardsHtml = favoriteBooks.map(book => {
+    carousel.innerHTML = favoriteBooks.map(book => {
       const isReadable = ['pdf', 'epub'].includes(book.extension);
       const coverUrl = this.coverCache[book.displayName];
-      const iconEmoji = book.extension === 'pdf' ? '📕' : book.extension === 'epub' ? '📗' : '📘';
+      const iconEmoji = book.extension === 'pdf' ? '📕' : '📗';
 
       const coverHtml = coverUrl
         ? `<img src="${coverUrl}" alt="Capa" class="fav-card-cover" onerror="this.outerHTML='<div class=&quot;fav-card-cover&quot;>${iconEmoji}</div>'">`
@@ -398,7 +547,7 @@ const App = {
           ${coverHtml}
           <div class="fav-card-info">
             <div>
-              <div class="fav-card-title" title="${book.displayName}">${book.displayName}</div>
+              <div class="fav-card-title" title="${Utils.escapeHtml(book.displayName)}">${Utils.escapeHtml(book.displayName)}</div>
               <div class="fav-card-stars">${book.stars}</div>
             </div>
             <div class="fav-card-actions">
@@ -409,23 +558,8 @@ const App = {
         </div>
       `;
     }).join('');
-
-    carousel.innerHTML = cardsHtml;
   },
 
-  /**
-   * Scroll favorites carousel left/right
-   */
-  scrollFavorites(offset) {
-    const carousel = document.getElementById('favorites-carousel');
-    if (carousel) {
-      carousel.scrollBy({ left: offset, behavior: 'smooth' });
-    }
-  },
-
-  /**
-   * Render a single book card
-   */
   renderCard(book) {
     const isReadable = ['pdf', 'epub'].includes(book.extension);
     const badgeClass = book.extension === 'pdf' ? 'badge-pdf' :
@@ -434,17 +568,15 @@ const App = {
     const iconEmoji = book.extension === 'pdf' ? '📕' :
                       book.extension === 'epub' ? '📗' : '📘';
 
-    // Check if has reading progress
-    const progress = Utils.getProgress(book.name);
+    const progress = Store.getProgress(book.name);
     const hasProgress = progress !== null;
+    const progressPercent = hasProgress ? Math.round((progress.percent || 0) * 100) : 0;
 
-    // Check favorite state
-    const isFav = Utils.isFavorite(book.name);
+    const isFav = Store.isFavorite(book.name);
     const favIcon = isFav ? '⭐' : '☆';
     const favClass = isFav ? ' is-favorite' : '';
     const favTitle = isFav ? 'Remover dos favoritos' : 'Adicionar aos favoritos';
 
-    // Check for cover image
     const coverUrl = this.coverCache[book.displayName];
     const coverContent = coverUrl
       ? `<img src="${coverUrl}" alt="Capa" class="book-cover-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
@@ -457,26 +589,24 @@ const App = {
         <div class="book-icon-container" onclick="${isReadable ? `App.openBook('${book.sha}')` : ''}">
           ${coverContent}
           <span class="book-format-badge ${badgeClass}">${book.extension.toUpperCase()}</span>
+          ${hasProgress ? `<div class="card-progress-bar" style="width:${progressPercent}%"></div>` : ''}
         </div>
         <div class="book-info">
-          <div class="book-title" title="${book.displayName}">${book.displayName}</div>
+          <div class="book-title" title="${Utils.escapeHtml(book.displayName)}">${Utils.escapeHtml(book.displayName)}</div>
           <div class="book-meta">
             <span class="book-size">${book.formattedSize}</span>
             <span class="book-stars">${book.stars}</span>
           </div>
-          ${hasProgress ? '<div style="font-size:0.65rem;color:var(--accent);margin-top:2px;">📖 Continuar leitura</div>' : ''}
+          ${hasProgress ? `<div class="continue-chip">📖 ${progressPercent}% lido</div>` : ''}
         </div>
         <div class="book-actions">
           ${isReadable ? `<button class="btn-sm btn-read" onclick="App.openBook('${book.sha}')">📖 Ler</button>` : ''}
-          <button class="btn-sm btn-download" onclick="App.downloadBook('${book.sha}')" title="${book.extension === 'pdf' ? 'Baixar convertido em EPUB' : 'Download'}">📥 ${book.extension === 'pdf' ? 'EPUB' : ''}</button>
+          <button class="btn-sm btn-download" onclick="App.openDownloadModalBySha('${book.sha}')" title="Opções de Download">📥 Baixar</button>
         </div>
       </div>
     `;
   },
 
-  /**
-   * Open a book by SHA
-   */
   openBook(sha) {
     const book = this.books.find(b => b.sha === sha) || this.filteredBooks.find(b => b.sha === sha);
     if (book) {
@@ -484,45 +614,95 @@ const App = {
     }
   },
 
-  /**
-   * Download a book by SHA (com conversão dinâmica para EPUB para arquivos PDF)
-   */
-  downloadBook(sha) {
+  openDownloadModalBySha(sha) {
     const book = this.books.find(b => b.sha === sha) || this.filteredBooks.find(b => b.sha === sha);
-    if (!book) return;
-
-    if (book.extension === 'pdf') {
-      const baseName = book.name.replace(/\.[^/.]+$/, '');
-      const epubFileName = `${baseName}.epub`;
-      const downloadUrl = `/api/book-epub?url=${encodeURIComponent(book.download_url)}&download=1&filename=${encodeURIComponent(epubFileName)}`;
-
-      Utils.showToast('⏳ Preparando e convertendo para EPUB... O download iniciará em instantes.');
-
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = epubFileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } else {
-      const a = document.createElement('a');
-      a.href = book.download_url;
-      a.download = book.name;
-      a.target = '_blank';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      Utils.showToast('📥 Download iniciado!');
-    }
+    if (book) this.openDownloadModal(book);
   },
 
   /* ==========================================
-     Book Cover Fetching (Open Library)
+     Modal / Sheet de Escolha de Formato de Download
      ========================================== */
+  openDownloadModal(book) {
+    this.pendingDownloadBook = book;
+    const modal = document.getElementById('download-modal');
+    const bookNameEl = document.getElementById('download-book-name');
+    const optionsContainer = document.getElementById('download-options');
 
-  /**
-   * Load cover cache from localStorage
-   */
+    if (!modal || !optionsContainer) return;
+
+    bookNameEl.textContent = book.displayName;
+
+    const baseName = book.name.replace(/\.[^/.]+$/, '');
+    const isPdf = book.extension === 'pdf';
+
+    optionsContainer.innerHTML = `
+      <button type="button" class="download-option-btn primary" onclick="App.executeDownload('epub')">
+        <div class="opt-icon">📗</div>
+        <div class="opt-info">
+          <strong>Baixar em .EPUB ${isPdf ? '(Otimizado para Leitor Digital)' : ''}</strong>
+          <small>Ideal para Kindle, Kobo, celulares e tablets com texto refluível e fonte ajustável.</small>
+        </div>
+        <span class="opt-arrow">⬇️</span>
+      </button>
+
+      <button type="button" class="download-option-btn" onclick="App.executeDownload('pdf')">
+        <div class="opt-icon">📕</div>
+        <div class="opt-info">
+          <strong>Baixar em .PDF (Arquivo Original)</strong>
+          <small>Layout idêntico ao impresso original do livro.</small>
+        </div>
+        <span class="opt-arrow">⬇️</span>
+      </button>
+    `;
+
+    modal.classList.add('active');
+  },
+
+  closeDownloadModal() {
+    document.getElementById('download-modal')?.classList.remove('active');
+    this.pendingDownloadBook = null;
+  },
+
+  executeDownload(format) {
+    const book = this.pendingDownloadBook;
+    this.closeDownloadModal();
+    if (!book) return;
+
+    const baseName = book.name.replace(/\.[^/.]+$/, '');
+
+    if (format === 'epub') {
+      if (book.extension === 'epub') {
+        // Já é epub nativo
+        this.triggerDirectDownload(book.download_url, `${baseName}.epub`);
+      } else {
+        // PDF convertido dinamicamente para EPUB
+        const epubFileName = `${baseName}.epub`;
+        const downloadUrl = `/api/book-epub?url=${encodeURIComponent(book.download_url)}&download=1&filename=${encodeURIComponent(epubFileName)}`;
+        Utils.showToast('⏳ Preparando conversão para .EPUB... O download iniciará em instantes.');
+        this.triggerDirectDownload(downloadUrl, epubFileName);
+      }
+    } else {
+      // PDF original (força download direto pelo proxy de anexos do servidor)
+      const pdfFileName = `${baseName}.${book.extension}`;
+      const downloadUrl = `/api/book-file?url=${encodeURIComponent(book.download_url)}&filename=${encodeURIComponent(pdfFileName)}`;
+      Utils.showToast('⏳ Iniciando download do .PDF original...');
+      this.triggerDirectDownload(downloadUrl, pdfFileName);
+    }
+  },
+
+  triggerDirectDownload(url, filename) {
+    const a = document.createElement('a');
+    a.href = url;
+    if (filename) a.download = filename;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  },
+
+  /* ==========================================
+     Capas dos Livros (Google Books + Open Library)
+     ========================================== */
   loadCoverCache() {
     try {
       this.coverCache = JSON.parse(localStorage.getItem('livraria_covers') || '{}');
@@ -531,9 +711,6 @@ const App = {
     }
   },
 
-  /**
-   * Save cover cache to localStorage
-   */
   saveCoverCache() {
     try {
       localStorage.setItem('livraria_covers', JSON.stringify(this.coverCache));
@@ -542,36 +719,23 @@ const App = {
     }
   },
 
-  /**
-   * Fetch covers for all books in background
-   */
   async fetchAllCovers() {
     const booksToFetch = this.books.filter(b => !(b.displayName in this.coverCache));
     if (booksToFetch.length === 0) return;
 
-    // Process in small batches to avoid overwhelming the API
     const batchSize = 5;
     for (let i = 0; i < booksToFetch.length; i += batchSize) {
       const batch = booksToFetch.slice(i, i + batchSize);
-      const promises = batch.map(book => this.fetchCover(book));
-      await Promise.allSettled(promises);
-
-      // Save cache periodically
+      await Promise.allSettled(batch.map(book => this.fetchCover(book)));
       this.saveCoverCache();
-
-      // Small delay between batches
       if (i + batchSize < booksToFetch.length) {
         await new Promise(r => setTimeout(r, 300));
       }
     }
   },
 
-  /**
-   * Fetch cover for a single book using Google Books API + Open Library fallback
-   */
   async fetchCover(book) {
     try {
-      // Clean title for search (strip common Portuguese subtitles and edition info)
       let cleanQuery = book.displayName
         .replace(/\d{1,2}(st|nd|rd|th)\s*edition/gi, '')
         .replace(/[-_]+/g, ' ')
@@ -579,7 +743,6 @@ const App = {
         .replace(/\[.*?\]/g, '')
         .trim();
 
-      // Split at hyphen/colon/dash to get core title
       cleanQuery = cleanQuery.split(/[:\-–—]/)[0].trim();
 
       if (!cleanQuery || cleanQuery.length < 2) {
@@ -587,7 +750,7 @@ const App = {
         return;
       }
 
-      // 1. Primary: Google Books API (high accuracy for PT-BR & tech titles)
+      // 1. Google Books API
       const gbUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(cleanQuery)}&maxResults=1`;
       const response = await fetch(gbUrl);
 
@@ -605,7 +768,7 @@ const App = {
         }
       }
 
-      // 2. Secondary Fallback: Open Library API
+      // 2. Open Library Fallback
       const olUrl = `${this.OPENLIBRARY_SEARCH}?title=${encodeURIComponent(cleanQuery)}&limit=1&fields=cover_i`;
       const olResponse = await fetch(olUrl);
       if (olResponse.ok) {
@@ -625,55 +788,26 @@ const App = {
     }
   },
 
-  /**
-   * Update a single card's cover image in the DOM (Main Grid + Carousel)
-   */
   updateCardCover(book) {
     const coverUrl = this.coverCache[book.displayName];
     if (!coverUrl) return;
 
-    // 1. Main Grid Card
+    // Grid Card
     const card = document.querySelector(`.book-card[data-name="${book.name}"]`);
     if (card) {
       const container = card.querySelector('.book-icon-container');
-      if (container) {
+      if (container && !container.querySelector('.book-cover-img')) {
         const iconDiv = container.querySelector('.book-icon');
-        if (iconDiv && !container.querySelector('.book-cover-img')) {
-          const img = document.createElement('img');
-          img.src = coverUrl;
-          img.alt = 'Capa';
-          img.className = 'book-cover-img';
-          img.onerror = () => {
-            img.style.display = 'none';
-            iconDiv.style.display = 'flex';
-          };
-          img.onload = () => {
-            iconDiv.style.display = 'none';
-          };
-          container.insertBefore(img, iconDiv);
-        }
-      }
-    }
-
-    // 2. Favorites Carousel Card
-    const favCard = document.querySelector(`.fav-card[data-name="${book.name}"]`);
-    if (favCard) {
-      const coverElem = favCard.querySelector('.fav-card-cover');
-      if (coverElem && coverElem.tagName !== 'IMG') {
         const img = document.createElement('img');
         img.src = coverUrl;
         img.alt = 'Capa';
-        img.className = 'fav-card-cover';
-        img.onerror = () => {
-          // Keep div icon
-        };
-        img.onload = () => {
-          favCard.replaceChild(img, coverElem);
-        };
+        img.className = 'book-cover-img';
+        img.onerror = () => { img.style.display = 'none'; if (iconDiv) iconDiv.style.display = 'flex'; };
+        img.onload = () => { if (iconDiv) iconDiv.style.display = 'none'; };
+        container.insertBefore(img, iconDiv);
       }
     }
   }
 };
 
-// Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => App.init());
