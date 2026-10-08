@@ -101,11 +101,42 @@ router.post('/chat', async (req, res) => {
     return res.status(400).json({ error: 'Nenhuma mensagem enviada.' });
   }
 
-  // Monta histórico (limitado) no formato do Gemini
-  const history = messages.slice(-MAX_HISTORY).map(m => ({
+  // Inicia SSE imediatamente para o cliente para evitar timeout 524 no Cloudflare / proxy
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.write(': connected\n\n');
+
+  const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
+  // Monta histórico garantindo que comece com 'user' e respeite as regras da API Gemini
+  let history = messages.map(m => ({
     role: m.role === 'model' ? 'model' : 'user',
     parts: [{ text: String(m.text || '').slice(0, 8000) }]
-  })).filter(m => m.parts[0].text);
+  })).filter(m => m.parts[0].text && m.parts[0].text.trim());
+
+  // A API Gemini exige que a primeira mensagem seja sempre 'user'
+  while (history.length > 0 && history[0].role !== 'user') {
+    history.shift();
+  }
+
+  // Mescla mensagens consecutivas do mesmo autor para manter alternância estrita
+  const cleanedHistory = [];
+  for (const item of history) {
+    if (cleanedHistory.length > 0 && cleanedHistory[cleanedHistory.length - 1].role === item.role) {
+      cleanedHistory[cleanedHistory.length - 1].parts[0].text += '\n\n' + item.parts[0].text;
+    } else {
+      cleanedHistory.push(item);
+    }
+  }
+  history = cleanedHistory.slice(-MAX_HISTORY);
+
+  if (history.length === 0) {
+    send({ error: 'Nenhuma mensagem válida para enviar à IA.' });
+    return res.end();
+  }
 
   // Anexa contexto à última mensagem do usuário
   const last = history[history.length - 1];
@@ -130,16 +161,6 @@ router.post('/chat', async (req, res) => {
 
   const controller = new AbortController();
   req.on('close', () => controller.abort());
-
-  // Inicia SSE imediatamente para o cliente para evitar timeout 524 no Cloudflare / proxy
-  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders?.();
-  res.write(': connected\n\n');
-
-  const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
 
   const primary = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
   const fallback = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.0-flash';

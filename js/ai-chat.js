@@ -384,11 +384,12 @@ const AIChat = {
 
     const lastMsg = this.messages[this.messages.length - 1];
     if (lastMsg) {
+      const text = lastMsg.text || (lastMsg.loading ? 'Digitando...' : '');
       if (window.marked && window.DOMPurify) {
-        const raw = marked.parse(lastMsg.text || 'Digitando...');
+        const raw = marked.parse(text);
         lastMsgEl.innerHTML = DOMPurify.sanitize(raw);
       } else {
-        lastMsgEl.innerHTML = Utils.escapeHtml(lastMsg.text || 'Digitando...').replace(/\n/g, '<br>');
+        lastMsgEl.innerHTML = Utils.escapeHtml(text).replace(/\n/g, '<br>');
       }
       this.scrollToBottom();
     }
