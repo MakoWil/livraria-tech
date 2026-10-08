@@ -156,7 +156,13 @@ router.post('/chat', async (req, res) => {
   const payload = {
     systemInstruction: { parts: [{ text: buildSystemPrompt(bookTitle, req.user.name) }] },
     contents: history,
-    generationConfig: { temperature: 0.7, maxOutputTokens: 8192 }
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 4096,
+      thinkingConfig: {
+        thinkingBudget: 0
+      }
+    }
   };
 
   const controller = new AbortController();
@@ -164,10 +170,13 @@ router.post('/chat', async (req, res) => {
 
   const CANDIDATE_MODELS = Array.from(new Set([
     process.env.GEMINI_MODEL,
-    'gemini-1.5-flash',
-    'gemini-2.0-flash',
     'gemini-2.5-flash',
-    'gemini-1.5-pro'
+    'gemini-2.5-pro',
+    'gemini-2.5-flash-lite',
+    'gemini-3.7-flash',
+    'gemini-3.8-flash',
+    'gemini-3.5-flash',
+    'gemini-flash-latest'
   ].filter(Boolean)));
 
   let upstream = null;
