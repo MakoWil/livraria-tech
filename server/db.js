@@ -14,7 +14,12 @@ const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'livraria.db');
 const db = new Database(DB_PATH);
 
 // Performance e integridade
-db.pragma('journal_mode = WAL');
+try {
+  db.pragma('journal_mode = WAL');
+} catch (e) {
+  console.warn('[DB WARN] Modo WAL indisponível no volume/filesystem, utilizando DELETE:', e.message);
+  try { db.pragma('journal_mode = DELETE'); } catch (_) {}
+}
 db.pragma('foreign_keys = ON');
 db.pragma('synchronous = NORMAL');
 
