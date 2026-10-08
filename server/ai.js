@@ -165,23 +165,32 @@ router.post('/chat', async (req, res) => {
     let buffer = '';
     for await (const chunk of upstream.body) {
       buffer += decoder.decode(chunk, { stream: true });
-      let idx;
-      while ((idx = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, idx).trim();
-        buffer = buffer.slice(idx + 1);
-        if (!line.startsWith('data:')) continue;
-        const json = line.slice(5).trim();
-        if (!json) continue;
+      let eventEnd;
+      while ((eventEnd = buffer.indexOf('\n\n')) >= 0) {
+        const eventBlock = buffer.slice(0, eventEnd);
+        buffer = buffer.slice(eventEnd + 2);
+
+        // Um bloco SSE pode conter uma ou mais linhas iniciadas com "data:"
+        const dataLines = eventBlock
+          .split(/\r?\n/)
+          .filter(l => l.startsWith('data:'))
+          .map(l => l.slice(5).trim())
+          .join('\n');
+
+        if (!dataLines) continue;
+
         try {
-          const data = JSON.parse(json);
+          const data = JSON.parse(dataLines);
           const parts = data?.candidates?.[0]?.content?.parts || [];
           const text = parts.filter(p => !p.thought && p.text).map(p => p.text).join('');
-          if (text) send({ text });
+          if (text) {
+            send({ text });
+          }
           const finish = data?.candidates?.[0]?.finishReason;
           if (finish && finish !== 'STOP' && finish !== 'MAX_TOKENS') {
             send({ warning: `Resposta interrompida (${finish}).` });
           }
-        } catch (_) { /* linha parcial */ }
+        } catch (_) { /* continua */ }
       }
     }
     send({ done: true });

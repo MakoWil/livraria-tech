@@ -329,7 +329,7 @@ const AIChat = {
         while ((idx = buffer.indexOf('\n\n')) >= 0) {
           const packet = buffer.slice(0, idx);
           buffer = buffer.slice(idx + 2);
-          const lines = packet.split('\n');
+          const lines = packet.split(/\r?\n/);
           for (const line of lines) {
             if (line.startsWith('data:')) {
               const jsonStr = line.slice(5).trim();
@@ -338,10 +338,16 @@ const AIChat = {
                 const parsed = JSON.parse(jsonStr);
                 if (parsed.text) {
                   modelMsg.text += parsed.text;
+                  modelMsg.loading = false;
                   this.updateLastModelMessage();
                 }
                 if (parsed.error) {
-                  modelMsg.text += `\n\n⚠️ *${parsed.error}*`;
+                  modelMsg.text = `⚠️ ${parsed.error}`;
+                  modelMsg.loading = false;
+                  this.updateLastModelMessage();
+                }
+                if (parsed.done) {
+                  modelMsg.loading = false;
                   this.updateLastModelMessage();
                 }
               } catch (_) {}
