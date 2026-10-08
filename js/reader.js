@@ -55,8 +55,7 @@ const Reader = {
     // Load based on type
     try {
       if (this.currentType === 'pdf') {
-        // Tenta conversão otimizada para EPUB com fallback automático
-        await this.loadConvertedEPUB(book, readerContent);
+        await this.loadPDF(book.download_url, readerContent);
       } else if (this.currentType === 'epub') {
         await this.loadEPUB(book.download_url, readerContent);
       } else {
