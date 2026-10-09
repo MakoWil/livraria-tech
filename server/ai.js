@@ -33,6 +33,10 @@ function rateLimited(userId) {
   return false;
 }
 
+function getApiKey() {
+  return (process.env.GEMINI_API_KEY || '').trim();
+}
+
 function buildSystemPrompt(bookTitle, userName) {
   return [
     'Você é o "Tutor Livraria Tech", um assistente de leitura especialista em programação e tecnologia.',
@@ -53,15 +57,15 @@ function buildSystemPrompt(bookTitle, userName) {
  * Faz a chamada streaming ao Gemini com timeout e retorna a Response (ou lança erro)
  */
 async function callGemini(model, payload, signal) {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getApiKey();
   if (!apiKey) {
     const err = new Error('GEMINI_API_KEY não configurada no servidor.');
     err.status = 503;
     throw err;
   }
 
-  // Timeout de 25s por chamada para nunca prender a conexão
-  const timeoutSignal = AbortSignal.timeout(25000);
+  // Timeout de 35s por chamada
+  const timeoutSignal = AbortSignal.timeout(35000);
   const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
   const res = await fetch(`${API_BASE}/${model}:streamGenerateContent?alt=sse`, {
@@ -89,7 +93,7 @@ async function callGemini(model, payload, signal) {
  * body: { bookTitle, messages:[{role:'user'|'model', text}], selection?, pageContext?, pageLabel? }
  */
 router.post('/chat', async (req, res) => {
-  if (!process.env.GEMINI_API_KEY) {
+  if (!getApiKey()) {
     return res.status(503).json({ error: 'Assistente de IA não configurado no servidor (chave GEMINI_API_KEY ausente).' });
   }
   if (rateLimited(req.user.id)) {
@@ -166,17 +170,18 @@ router.post('/chat', async (req, res) => {
   };
 
   const controller = new AbortController();
-  req.on('close', () => controller.abort());
+  // Aborta apenas se o cliente fechar a resposta antes de terminar (não no req.close)
+  res.on('close', () => {
+    if (!res.writableEnded) {
+      controller.abort();
+    }
+  });
 
   const CANDIDATE_MODELS = Array.from(new Set([
-    process.env.GEMINI_MODEL,
     'gemini-2.5-flash',
+    process.env.GEMINI_MODEL,
     'gemini-2.5-pro',
-    'gemini-2.5-flash-lite',
-    'gemini-3.7-flash',
-    'gemini-3.8-flash',
-    'gemini-3.5-flash',
-    'gemini-flash-latest'
+    'gemini-2.5-flash-lite'
   ].filter(Boolean)));
 
   let upstream = null;
@@ -213,7 +218,6 @@ router.post('/chat', async (req, res) => {
         const eventBlock = buffer.slice(0, eventEnd);
         buffer = buffer.slice(eventEnd + 2);
 
-        // Um bloco SSE pode conter uma ou mais linhas iniciadas com "data:"
         const dataLines = eventBlock
           .split(/\r?\n/)
           .filter(l => l.startsWith('data:'))
