@@ -19,6 +19,8 @@ const Reader = {
   currentTab: 'bookmarks', // 'bookmarks' | 'notes'
   selectedText: '',
   selectedRangeInfo: null,
+  _isPinching: false,
+  _pinchJustEnded: false,
 
   /**
    * Open a book in the reader
@@ -486,6 +488,8 @@ const Reader = {
 
   setupPDFTextSelection(container) {
     const handleSelection = () => {
+      if (this._isPinching || this._pinchJustEnded) return;
+
       const sel = window.getSelection();
       const text = sel ? sel.toString().trim() : '';
 
@@ -509,7 +513,10 @@ const Reader = {
     };
 
     container.addEventListener('mouseup', handleSelection);
-    container.addEventListener('touchend', () => setTimeout(handleSelection, 150));
+    container.addEventListener('touchend', () => {
+      if (this._isPinching || this._pinchJustEnded) return;
+      setTimeout(handleSelection, 150);
+    });
   },
 
   updatePDFProgress(scrollContainer, totalPages) {
@@ -535,65 +542,116 @@ const Reader = {
     this.updateProgressBar(currentPage, totalPages);
   },
 
-  setupPDFTouchZoom(container) {
-    if (!container) return;
+  setupPDFTouchZoom(pagesContainer) {
+    const scrollContainer = document.getElementById('reader-content');
+    if (!pagesContainer || !scrollContainer) return;
+
     let initialDist = 0;
     let initialScale = this.pdfScale;
     let isPinching = false;
+    let currentRatio = 1;
 
     const onTouchStart = (e) => {
       if (e.touches.length === 2) {
+        // Bloqueia gestos nativos do browser (swipe-back, pull-to-refresh ou zoom global da viewport)
+        if (e.cancelable) e.preventDefault();
         isPinching = true;
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        initialDist = Math.hypot(dx, dy);
+        this._isPinching = true;
+
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const dx = t1.clientX - t2.clientX;
+        const dy = t1.clientY - t2.clientY;
+        initialDist = Math.hypot(dx, dy) || 1;
         initialScale = this.pdfScale;
+        currentRatio = 1;
+
+        pagesContainer.classList.add('is-pinching');
+        pagesContainer.style.transformOrigin = '50% 0%';
+        pagesContainer.style.transition = 'none';
       }
     };
 
     const onTouchMove = (e) => {
       if (isPinching && e.touches.length === 2) {
         if (e.cancelable) e.preventDefault();
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const dx = t1.clientX - t2.clientX;
+        const dy = t1.clientY - t2.clientY;
         const currentDist = Math.hypot(dx, dy);
+
         if (initialDist > 0) {
-          const ratio = currentDist / initialDist;
-          const targetScale = Math.min(Math.max(+(initialScale * ratio).toFixed(2), 0.5), 3.0);
-          this.updateZoomLevel(targetScale);
+          const rawRatio = currentDist / initialDist;
+          const minRatio = 0.55 / initialScale;
+          const maxRatio = 2.8 / initialScale;
+          currentRatio = Math.min(Math.max(rawRatio, minRatio), maxRatio);
+
+          pagesContainer.style.transform = `scale(${currentRatio})`;
+
+          const virtualScale = Math.min(Math.max(+(initialScale * currentRatio).toFixed(2), 0.55), 2.8);
+          this.updateZoomLevel(virtualScale);
         }
       }
+    };
+
+    const finishPinch = (e) => {
+      if (!isPinching) return;
+      if (e && e.cancelable) e.preventDefault();
+
+      isPinching = false;
+      this._isPinching = false;
+      this._pinchJustEnded = true;
+
+      // Bloqueia cliques fantasmas / seleção por 400ms após soltar os dedos
+      setTimeout(() => {
+        this._pinchJustEnded = false;
+      }, 400);
+
+      pagesContainer.classList.remove('is-pinching');
+      pagesContainer.style.transform = '';
+      pagesContainer.style.transition = '';
+
+      if (currentRatio && Math.abs(currentRatio - 1) > 0.04) {
+        const targetScale = Math.min(Math.max(+(initialScale * currentRatio).toFixed(2), 0.55), 2.8);
+        this.setZoom(targetScale);
+      } else {
+        this.updateZoomLevel(this.pdfScale);
+      }
+      currentRatio = 1;
     };
 
     const onTouchEnd = (e) => {
       if (isPinching) {
-        isPinching = false;
-        const zoomEl = document.getElementById('zoom-level');
-        const pendingScale = zoomEl?.dataset.pendingScale;
-        if (pendingScale) {
-          this.setZoom(parseFloat(pendingScale));
-          delete zoomEl.dataset.pendingScale;
+        if (e.cancelable) e.preventDefault();
+        if (e.touches.length < 2) {
+          finishPinch(e);
         }
       }
     };
 
-    container.addEventListener('touchstart', onTouchStart, { passive: true });
-    container.addEventListener('touchmove', onTouchMove, { passive: false });
-    container.addEventListener('touchend', onTouchEnd, { passive: true });
-    container.addEventListener('touchcancel', onTouchEnd, { passive: true });
+    scrollContainer.addEventListener('touchstart', onTouchStart, { passive: false });
+    scrollContainer.addEventListener('touchmove', onTouchMove, { passive: false });
+    scrollContainer.addEventListener('touchend', onTouchEnd, { passive: false });
+    scrollContainer.addEventListener('touchcancel', onTouchEnd, { passive: false });
 
     this._touchZoomCleanup = () => {
-      container.removeEventListener('touchstart', onTouchStart);
-      container.removeEventListener('touchmove', onTouchMove);
-      container.removeEventListener('touchend', onTouchEnd);
-      container.removeEventListener('touchcancel', onTouchEnd);
+      scrollContainer.removeEventListener('touchstart', onTouchStart);
+      scrollContainer.removeEventListener('touchmove', onTouchMove);
+      scrollContainer.removeEventListener('touchend', onTouchEnd);
+      scrollContainer.removeEventListener('touchcancel', onTouchEnd);
+      pagesContainer.classList.remove('is-pinching');
+      pagesContainer.style.transform = '';
     };
   },
 
   setZoom(newScale) {
     if (this.currentType !== 'pdf' || !this.pdfDoc) return;
-    const clampedScale = Math.min(Math.max(+newScale.toFixed(2), 0.5), 3.0);
-    if (Math.abs(this.pdfScale - clampedScale) < 0.01) return;
+    const clampedScale = Math.min(Math.max(+newScale.toFixed(2), 0.55), 2.8);
+    if (Math.abs(this.pdfScale - clampedScale) < 0.02) {
+      this.updateZoomLevel();
+      return;
+    }
 
     const cur = this.getCurrentPDFPage();
     this.pdfScale = clampedScale;

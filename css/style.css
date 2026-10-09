@@ -910,6 +910,8 @@ body {
   z-index: 200;
   display: none;
   flex-direction: column;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 .reader-view.active {
@@ -1089,6 +1091,9 @@ body {
   position: relative;
   display: flex;
   justify-content: center;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* PDF Viewer */
@@ -1099,6 +1104,19 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  touch-action: pan-x pan-y;
+  transform-origin: 50% 0%;
+  will-change: transform;
+}
+
+.pdf-container.is-pinching {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  pointer-events: none !important;
+}
+
+.pdf-container.is-pinching .textLayer {
+  display: none !important;
 }
 
 .pdf-page-canvas {

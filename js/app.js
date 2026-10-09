@@ -205,7 +205,14 @@ const App = {
     });
 
     // Reader controls
-    document.getElementById('reader-close')?.addEventListener('click', () => Reader.close());
+    document.getElementById('reader-close')?.addEventListener('click', (e) => {
+      if (Reader._isPinching || Reader._pinchJustEnded) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      Reader.close();
+    });
     document.getElementById('reader-night')?.addEventListener('click', () => Reader.toggleNightMode());
     document.getElementById('reader-bookmark-add')?.addEventListener('click', () => Reader.showAddBookmarkModal());
     document.getElementById('reader-bookmarks-toggle')?.addEventListener('click', () => Reader.toggleBookmarks());

@@ -13,4 +13,5 @@
 | 2026-07-27 | 12:10 | 📝 Criação do README.md e .gitignore |
 | 2026-10-09 | 07:25 | 📱 Correção de travamento no celular ao abrir PDF (estouro de memória): limite de resolução do canvas, liberação de páginas fora da tela, zoom inicial ajustado à largura e destruição correta do documento ao fechar |
 | 2026-10-09 | 07:58 | 📱 Correção dos botões no mobile (safe-area, Tutor IA e Download visíveis sem corte) e correção do erro ao dar zoom (reconstrução de escala, debounce, pinch touch e limpeza de página) |
+| 2026-10-09 | 08:08 | 🔍 Correção definitiva do pinch-to-zoom (2 dedos no mobile): isolamento de gestos com CSS overscroll-behavior e touch-action para evitar volta involuntária de tela/swipe-back nativo, preview com hardware-accelerated CSS transform em 60fps durante o pinch, e bloqueio de cliques/seleção fantasmas ao soltar os dedos |
 
