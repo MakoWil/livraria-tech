@@ -339,10 +339,13 @@ const AIChat = {
         }
 
         buffer += decoder.decode(value, { stream: true });
-        let idx;
-        while ((idx = buffer.indexOf('\n\n')) >= 0) {
+        while (true) {
+          const match = buffer.match(/\r?\n\r?\n/);
+          if (!match) break;
+          const idx = match.index;
+          const delimiterLen = match[0].length;
           const packet = buffer.slice(0, idx);
-          buffer = buffer.slice(idx + 2);
+          buffer = buffer.slice(idx + delimiterLen);
           const lines = packet.split(/\r?\n/);
           for (const line of lines) {
             if (line.startsWith('data:')) {

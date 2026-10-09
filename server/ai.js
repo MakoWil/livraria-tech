@@ -213,10 +213,13 @@ router.post('/chat', async (req, res) => {
     let buffer = '';
     for await (const chunk of upstream.body) {
       buffer += decoder.decode(chunk, { stream: true });
-      let eventEnd;
-      while ((eventEnd = buffer.indexOf('\n\n')) >= 0) {
+      while (true) {
+        const match = buffer.match(/\r?\n\r?\n/);
+        if (!match) break;
+        const eventEnd = match.index;
+        const delimiterLen = match[0].length;
         const eventBlock = buffer.slice(0, eventEnd);
-        buffer = buffer.slice(eventEnd + 2);
+        buffer = buffer.slice(eventEnd + delimiterLen);
 
         const dataLines = eventBlock
           .split(/\r?\n/)
