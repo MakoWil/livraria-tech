@@ -131,7 +131,10 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  height: var(--header-height);
+  height: calc(var(--header-height) + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
   background: var(--bg-header);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -144,7 +147,7 @@ body {
   max-width: var(--max-width);
   margin: 0 auto;
   padding: 0 20px;
-  height: 100%;
+  height: var(--header-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -269,8 +272,10 @@ body {
    Main Content
    ============================================ */
 .main {
-  padding-top: calc(var(--header-height) + 24px);
-  padding-bottom: 40px;
+  padding-top: calc(var(--header-height) + env(safe-area-inset-top, 0px) + 20px);
+  padding-bottom: max(40px, env(safe-area-inset-bottom, 0px));
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
   min-height: 100vh;
 }
 
@@ -1511,8 +1516,23 @@ body {
 
 /* Mobile Small */
 @media (max-width: 480px) {
+  :root {
+    --header-height: 58px;
+  }
+
   .header-content {
-    padding: 0 12px;
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .logo {
+    gap: 0;
+  }
+
+  .logo-icon,
+  .logo-icon-img {
+    width: 32px;
+    height: 32px;
   }
 
   .logo-text {
@@ -1521,6 +1541,78 @@ body {
 
   .search-container {
     max-width: none;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .search-input {
+    height: 36px;
+    padding: 0 10px 0 32px;
+    font-size: 0.8125rem;
+    border-radius: var(--radius-md);
+  }
+
+  .search-icon {
+    left: 10px;
+    width: 14px;
+    height: 14px;
+  }
+
+  .header-actions {
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .btn-icon {
+    width: 34px;
+    height: 34px;
+    font-size: 15px;
+  }
+
+  .user-avatar-btn {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+  }
+
+  .container {
+    padding: 0 12px;
+  }
+
+  .greeting {
+    font-size: 0.95rem;
+    margin-bottom: 12px;
+  }
+
+  .stats-bar {
+    margin-bottom: 16px;
+    gap: 8px;
+  }
+
+  .stats-text {
+    font-size: 0.8rem;
+  }
+
+  .stats-actions {
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .favorites-filter-btn {
+    height: 32px;
+    padding: 0 10px;
+    font-size: 0.75rem;
+    gap: 4px;
+  }
+
+  .view-toggle {
+    padding: 2px;
+  }
+
+  .view-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
   }
 
   .books-grid {

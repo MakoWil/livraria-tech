@@ -200,9 +200,21 @@ const Reader = {
       try { item.renderTask.cancel(); } catch (_) {}
       item.renderTask = null;
     }
-    item.canvas.width = 0;
-    item.canvas.height = 0;
-    item.textLayer.innerHTML = '';
+
+    // Substitui o canvas por um novo elemento limpo para evitar o erro de canvas compartilhado do PDF.js
+    if (item.canvas && item.canvas.parentNode) {
+      const newCanvas = document.createElement('canvas');
+      newCanvas.className = 'pdf-page-canvas';
+      item.canvas.parentNode.replaceChild(newCanvas, item.canvas);
+      item.canvas = newCanvas;
+    } else if (item.canvas) {
+      item.canvas.width = 0;
+      item.canvas.height = 0;
+    }
+
+    if (item.textLayer) {
+      item.textLayer.innerHTML = '';
+    }
     if (item.page) {
       try { item.page.cleanup(); } catch (_) {}
       item.page = null;
@@ -373,7 +385,11 @@ const Reader = {
       setTimeout(() => {
         const target = pagesContainer.querySelector(`[data-page="${scrollToPage}"]`);
         if (target) {
-          target.scrollIntoView({ behavior: 'instant', block: 'start' });
+          try {
+            target.scrollIntoView({ behavior: 'auto', block: 'start' });
+          } catch (_) {
+            try { target.scrollIntoView(true); } catch (__) {}
+          }
         }
       }, 60);
     }
@@ -599,6 +615,9 @@ const Reader = {
       if (!isPinching) return;
       if (e && e.cancelable) e.preventDefault();
 
+      const finalRatio = currentRatio;
+      const baseScale = initialScale;
+
       isPinching = false;
       this._isPinching = false;
       this._pinchJustEnded = true;
@@ -612,8 +631,8 @@ const Reader = {
       pagesContainer.style.transform = '';
       pagesContainer.style.transition = '';
 
-      if (currentRatio && Math.abs(currentRatio - 1) > 0.04) {
-        const targetScale = Math.min(Math.max(+(initialScale * currentRatio).toFixed(2), 0.55), 2.8);
+      if (finalRatio && Math.abs(finalRatio - 1) > 0.04) {
+        const targetScale = Math.min(Math.max(+(baseScale * finalRatio).toFixed(2), 0.55), 2.8);
         this.setZoom(targetScale);
       } else {
         this.updateZoomLevel(this.pdfScale);
@@ -670,9 +689,16 @@ const Reader = {
       this.releasePDFPage(p);
     });
 
-    const target = document.querySelector(`.pdf-page-wrapper[data-page="${cur}"]`);
-    if (target) {
-      target.scrollIntoView({ behavior: 'instant', block: 'start' });
+    try {
+      const target = document.querySelector(`.pdf-page-wrapper[data-page="${cur}"]`);
+      if (target) {
+        target.scrollIntoView({ behavior: 'auto', block: 'start' });
+      }
+    } catch (_) {
+      try {
+        const target = document.querySelector(`.pdf-page-wrapper[data-page="${cur}"]`);
+        if (target) target.scrollIntoView(true);
+      } catch (__) {}
     }
 
     // Renderiza a página ativa e adjacentes
