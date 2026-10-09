@@ -12,4 +12,5 @@
 | 2026-07-27 | 12:09 | 🐳 Criação do Dockerfile, docker-compose.yml, nginx.conf |
 | 2026-07-27 | 12:10 | 📝 Criação do README.md e .gitignore |
 | 2026-10-09 | 07:25 | 📱 Correção de travamento no celular ao abrir PDF (estouro de memória): limite de resolução do canvas, liberação de páginas fora da tela, zoom inicial ajustado à largura e destruição correta do documento ao fechar |
+| 2026-10-09 | 07:58 | 📱 Correção dos botões no mobile (safe-area, Tutor IA e Download visíveis sem corte) e correção do erro ao dar zoom (reconstrução de escala, debounce, pinch touch e limpeza de página) |
 

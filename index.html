@@ -17,7 +17,7 @@
   <link rel="apple-touch-icon" href="/assets/icon-180.png">
 
   <!-- Styles -->
-  <link rel="stylesheet" href="/css/style.css?v=2.0.9">
+  <link rel="stylesheet" href="/css/style.css?v=2.1.0">
 
   <!-- PDF.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -173,27 +173,30 @@
        ============================================ -->
   <div class="reader-view" id="reader-view" role="dialog" aria-modal="true" aria-labelledby="reader-title">
     <div class="reader-header">
-      <button class="reader-btn-icon" id="reader-close" title="Voltar" aria-label="Voltar à biblioteca">←</button>
+      <button class="reader-btn-icon" id="reader-close" title="Voltar à biblioteca" aria-label="Voltar à biblioteca">←</button>
 
       <div class="reader-title-wrap">
         <div class="reader-title" id="reader-title">Carregando...</div>
         <div class="reader-subtitle" id="reader-subtitle"></div>
       </div>
 
-      <button class="reader-btn ai-btn" id="reader-ai-toggle" title="Tutor de IA" aria-label="Abrir tutor de IA">✨ <span>Tutor IA</span></button>
+      <div class="reader-actions">
+        <button class="reader-btn ai-btn" id="reader-ai-toggle" title="Tutor de IA" aria-label="Abrir tutor de IA">✨ <span>Tutor IA</span></button>
+        <button class="reader-btn accent" id="reader-download" title="Opções de Download" aria-label="Opções de Download">📥 <span>Download</span></button>
 
-      <div class="reader-tools" id="reader-tools">
-        <button class="reader-btn" id="reader-bookmark-add" title="Adicionar marcador">📑 <span>Marcar</span></button>
-        <button class="reader-btn" id="reader-bookmarks-toggle" title="Marcadores e notas">🔖 <span>Notas</span></button>
-        <button class="reader-btn" id="reader-night" title="Modo noturno" aria-label="Alternar modo noturno">🌙 <span class="tool-label">Noturno</span></button>
-        <div class="font-group">
-          <button class="reader-btn-icon" id="font-decrease" title="Diminuir fonte/zoom" aria-label="Diminuir fonte/zoom">A-</button>
-          <button class="reader-btn-icon" id="font-increase" title="Aumentar fonte/zoom" aria-label="Aumentar fonte/zoom">A+</button>
+        <div class="reader-tools" id="reader-tools">
+          <button class="reader-btn tool-item" id="reader-bookmark-add" title="Adicionar marcador">📑 <span>Marcar página</span></button>
+          <button class="reader-btn tool-item" id="reader-bookmarks-toggle" title="Marcadores e notas">🔖 <span>Marcadores & Notas</span></button>
+          <button class="reader-btn tool-item" id="reader-night" title="Modo noturno" aria-label="Alternar modo noturno">🌙 <span>Modo Noturno</span></button>
+          <div class="font-group tool-item">
+            <button class="reader-btn-icon" id="font-decrease" title="Diminuir fonte/zoom" aria-label="Diminuir fonte/zoom">A-</button>
+            <span class="font-group-label">Zoom/Fonte</span>
+            <button class="reader-btn-icon" id="font-increase" title="Aumentar fonte/zoom" aria-label="Aumentar fonte/zoom">A+</button>
+          </div>
         </div>
-        <button class="reader-btn accent" id="reader-download" title="Download">📥 <span>Download</span></button>
-      </div>
 
-      <button class="reader-btn-icon reader-more" id="reader-more" title="Mais opções" aria-label="Mais opções" aria-expanded="false">⋮</button>
+        <button class="reader-btn-icon reader-more" id="reader-more" title="Mais opções" aria-label="Mais opções" aria-expanded="false">⋮</button>
+      </div>
     </div>
 
     <div class="reader-progress">

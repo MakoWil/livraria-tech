@@ -918,28 +918,30 @@ body {
 
 /* Reader Header */
 .reader-header {
-  height: 56px;
+  min-height: 56px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  padding: 0 16px;
-  gap: 10px;
+  justify-content: space-between;
+  padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+  gap: 8px;
   flex-shrink: 0;
-  z-index: 10;
+  z-index: 100;
+  box-sizing: border-box;
 }
 
 .reader-title-wrap {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   overflow: hidden;
 }
 
 .reader-title {
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -949,7 +951,7 @@ body {
 }
 
 .reader-subtitle {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 700;
   color: var(--accent);
   background: var(--accent-light);
@@ -957,6 +959,13 @@ body {
   border-radius: 4px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.reader-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -977,6 +986,7 @@ body {
   transition: all var(--transition-fast);
   flex-shrink: 0;
   white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .reader-btn:hover {
@@ -998,10 +1008,22 @@ body {
   box-shadow: 0 0 12px rgba(79, 110, 247, 0.25);
 }
 
+.reader-btn.accent {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.reader-btn.accent:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
 .reader-tools {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -1013,6 +1035,10 @@ body {
   border-radius: var(--radius-sm, 8px);
   padding: 2px;
   gap: 2px;
+}
+
+.font-group-label {
+  display: none;
 }
 
 .font-group .reader-btn-icon {
@@ -1027,17 +1053,6 @@ body {
 
 .font-group .reader-btn-icon:hover {
   background: var(--bg-badge);
-}
-
-.reader-btn.accent {
-  background: var(--accent);
-  color: white;
-  border-color: var(--accent);
-}
-
-.reader-btn.accent:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
 }
 
 .reader-btn-icon {
@@ -1055,6 +1070,7 @@ body {
   justify-content: center;
   transition: all var(--transition-fast);
   flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .reader-btn-icon:hover {
@@ -1490,21 +1506,35 @@ body {
   }
 
   .books-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
   }
 
   .book-card {
-    padding: 12px;
+    padding: 10px;
   }
 
   .reader-header {
-    padding: 0 8px;
+    padding: max(6px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) 6px max(6px, env(safe-area-inset-left));
     gap: 4px;
   }
 
-  .reader-btn span {
-    display: none;
+  .reader-title {
+    font-size: 0.8rem;
+  }
+
+  .reader-btn.ai-btn {
+    padding: 0 8px;
+    font-size: 0.75rem;
+    height: 34px;
+    gap: 4px;
+  }
+
+  .reader-btn.accent {
+    padding: 0 8px;
+    font-size: 0.75rem;
+    height: 34px;
+    gap: 4px;
   }
 
   .bookmarks-panel {
@@ -1513,33 +1543,76 @@ body {
   }
 
   .zoom-controls {
-    bottom: 16px;
-    right: 16px;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    right: max(12px, env(safe-area-inset-right));
   }
 }
 
 /* Tablet & Mobile */
 @media (max-width: 768px) {
   .reader-header {
-    padding: 0 10px;
-    gap: 8px;
+    padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 8px max(8px, env(safe-area-inset-left));
+    gap: 6px;
+  }
+
+  .reader-title-wrap {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .reader-title {
+    font-size: 0.84rem;
+    font-weight: 600;
+  }
+
+  .reader-subtitle {
+    display: none;
+  }
+
+  .reader-actions {
+    gap: 5px;
+  }
+
+  .reader-btn.ai-btn {
+    height: 34px;
+    padding: 0 9px;
+    font-size: 0.78rem;
+    gap: 4px;
+    border-radius: var(--radius-sm, 8px);
+  }
+
+  .reader-btn.accent {
+    height: 34px;
+    padding: 0 9px;
+    font-size: 0.78rem;
+    gap: 4px;
+    border-radius: var(--radius-sm, 8px);
+  }
+
+  .reader-more {
+    display: inline-flex;
+    height: 34px;
+    width: 34px;
+    font-size: 18px;
+    border-radius: var(--radius-sm, 8px);
   }
 
   .reader-tools {
     display: none;
-    position: absolute;
-    top: 56px;
-    right: 8px;
+    position: fixed;
+    top: calc(56px + env(safe-area-inset-top, 0px) + 6px);
+    right: max(10px, env(safe-area-inset-right));
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: var(--radius-md, 12px);
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
-    padding: 10px;
+    box-shadow: var(--shadow-lg), 0 14px 35px rgba(0, 0, 0, 0.35);
+    padding: 8px;
     flex-direction: column;
     align-items: stretch;
-    gap: 8px;
-    z-index: 100;
-    min-width: 180px;
+    gap: 6px;
+    z-index: 200;
+    min-width: 220px;
+    animation: scaleIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .reader-tools.mobile-open {
@@ -1548,20 +1621,38 @@ body {
 
   .reader-tools .reader-btn {
     width: 100%;
+    height: 40px;
+    padding: 0 12px;
     justify-content: flex-start;
+    font-size: 0.84rem;
+    gap: 8px;
+    border-radius: var(--radius-sm, 8px);
+  }
+
+  .reader-tools .reader-btn span {
+    display: inline-flex !important;
   }
 
   .reader-tools .font-group {
-    justify-content: center;
+    justify-content: space-between;
     width: 100%;
+    height: 40px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm, 8px);
+  }
+
+  .font-group-label {
+    display: inline-block;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-secondary);
   }
 
   .reader-tools .font-group .reader-btn-icon {
-    flex: 1;
-  }
-
-  .reader-more {
-    display: inline-flex;
+    width: 32px;
+    height: 32px;
+    font-size: 0.8rem;
+    font-weight: 700;
   }
 }
 

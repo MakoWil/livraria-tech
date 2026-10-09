@@ -203,6 +203,7 @@ const Reader = {
     item.textLayer.innerHTML = '';
     if (item.page) {
       try { item.page.cleanup(); } catch (_) {}
+      item.page = null;
     }
     item.rendered = false;
     item.rendering = false;
@@ -242,6 +243,10 @@ const Reader = {
     if (this._wheelZoomHandler && readerView) {
       readerView.removeEventListener('wheel', this._wheelZoomHandler);
       this._wheelZoomHandler = null;
+    }
+    if (this._touchZoomCleanup) {
+      this._touchZoomCleanup();
+      this._touchZoomCleanup = null;
     }
 
     this.pdfPages.forEach(p => this.releasePDFPage(p));
@@ -286,25 +291,34 @@ const Reader = {
     // Obtém dimensões da primeira página para estruturar os wrappers
     let sampleWidth = 620;
     let sampleHeight = 880;
+    this._basePageWidth = 620;
+    this._basePageHeight = 880;
     try {
       const firstPage = await this.pdfDoc.getPage(1);
+      const baseVp = firstPage.getViewport({ scale: 1 });
+      this._basePageWidth = baseVp.width || 620;
+      this._basePageHeight = baseVp.height || 880;
+
       // No celular, ajusta o zoom inicial à largura da tela (canvases menores = menos memória)
       if (isMobile) {
-        const baseVp = firstPage.getViewport({ scale: 1 });
         const available = (container.clientWidth || window.innerWidth) - 24;
         if (available > 100) {
-          this.pdfScale = Math.min(Math.max(+(available / baseVp.width).toFixed(2), 0.5), 1.5);
+          this.pdfScale = Math.min(Math.max(+(available / this._basePageWidth).toFixed(2), 0.5), 1.5);
         }
       }
       const sampleVp = firstPage.getViewport({ scale: this.pdfScale });
       sampleWidth = Math.round(sampleVp.width);
       sampleHeight = Math.round(sampleVp.height);
+      try { firstPage.cleanup(); } catch (_) {}
     } catch (e) {
       console.warn('Aviso ao obter dimensões da página 1:', e);
     }
 
     container.innerHTML = `<div class="pdf-container" id="pdf-pages"></div>`;
     const pagesContainer = document.getElementById('pdf-pages');
+
+    // Suporte a pinch-to-zoom suave em telas touch
+    this.setupPDFTouchZoom(pagesContainer);
 
     const progress = Store.getProgress(this.currentBook.name);
     let scrollToPage = progress && progress.page ? Math.min(Math.max(progress.page, 1), totalPages) : 1;
@@ -521,42 +535,128 @@ const Reader = {
     this.updateProgressBar(currentPage, totalPages);
   },
 
-  zoomIn() {
-    if (this.currentType !== 'pdf' || !this.pdfDoc) return;
-    this.pdfScale = Math.min(+(this.pdfScale + 0.15).toFixed(2), 3.0);
-    this.reRenderAllPDF();
+  setupPDFTouchZoom(container) {
+    if (!container) return;
+    let initialDist = 0;
+    let initialScale = this.pdfScale;
+    let isPinching = false;
+
+    const onTouchStart = (e) => {
+      if (e.touches.length === 2) {
+        isPinching = true;
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        initialDist = Math.hypot(dx, dy);
+        initialScale = this.pdfScale;
+      }
+    };
+
+    const onTouchMove = (e) => {
+      if (isPinching && e.touches.length === 2) {
+        if (e.cancelable) e.preventDefault();
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const currentDist = Math.hypot(dx, dy);
+        if (initialDist > 0) {
+          const ratio = currentDist / initialDist;
+          const targetScale = Math.min(Math.max(+(initialScale * ratio).toFixed(2), 0.5), 3.0);
+          this.updateZoomLevel(targetScale);
+        }
+      }
+    };
+
+    const onTouchEnd = (e) => {
+      if (isPinching) {
+        isPinching = false;
+        const zoomEl = document.getElementById('zoom-level');
+        const pendingScale = zoomEl?.dataset.pendingScale;
+        if (pendingScale) {
+          this.setZoom(parseFloat(pendingScale));
+          delete zoomEl.dataset.pendingScale;
+        }
+      }
+    };
+
+    container.addEventListener('touchstart', onTouchStart, { passive: true });
+    container.addEventListener('touchmove', onTouchMove, { passive: false });
+    container.addEventListener('touchend', onTouchEnd, { passive: true });
+    container.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+    this._touchZoomCleanup = () => {
+      container.removeEventListener('touchstart', onTouchStart);
+      container.removeEventListener('touchmove', onTouchMove);
+      container.removeEventListener('touchend', onTouchEnd);
+      container.removeEventListener('touchcancel', onTouchEnd);
+    };
   },
 
-  zoomOut() {
+  setZoom(newScale) {
     if (this.currentType !== 'pdf' || !this.pdfDoc) return;
-    this.pdfScale = Math.max(+(this.pdfScale - 0.15).toFixed(2), 0.5);
-    this.reRenderAllPDF();
-  },
+    const clampedScale = Math.min(Math.max(+newScale.toFixed(2), 0.5), 3.0);
+    if (Math.abs(this.pdfScale - clampedScale) < 0.01) return;
 
-  fitWidth() {
-    if (this.currentType !== 'pdf' || !this.pdfDoc) return;
-    const content = document.getElementById('reader-content');
-    const availableWidth = (content?.clientWidth || window.innerWidth) - 32;
-    if (availableWidth > 200 && this.pdfPages[0]?.page) {
-      const vp = this.pdfPages[0].page.getViewport({ scale: 1.0 });
-      this.pdfScale = +(availableWidth / vp.width).toFixed(2);
-      this.reRenderAllPDF();
-    }
-  },
-
-  reRenderAllPDF() {
-    this.updateZoomLevel();
     const cur = this.getCurrentPDFPage();
-    // Libera todos os canvases antes de redesenhar no novo zoom (evita acumular memória)
-    this.pdfPages.forEach(p => this.releasePDFPage(p));
+    this.pdfScale = clampedScale;
+    this.updateZoomLevel();
+
+    const baseWidth = this._basePageWidth || 620;
+    const baseHeight = this._basePageHeight || 880;
+    const newWidth = Math.round(baseWidth * this.pdfScale);
+    const newHeight = Math.round(baseHeight * this.pdfScale);
+
+    // Atualiza todos os wrappers imediatamente para garantir a integridade da rolagem
+    this.pdfPages.forEach(p => {
+      p.wrapper.style.width = `${newWidth}px`;
+      p.wrapper.style.minHeight = `${newHeight}px`;
+      p.wrapper.style.height = `${newHeight}px`;
+      this.releasePDFPage(p);
+    });
+
+    const target = document.querySelector(`.pdf-page-wrapper[data-page="${cur}"]`);
+    if (target) {
+      target.scrollIntoView({ behavior: 'instant', block: 'start' });
+    }
+
+    // Renderiza a página ativa e adjacentes
     this.renderPDFPage(cur);
     if (cur > 1) this.renderPDFPage(cur - 1);
     if (cur < this.pdfPages.length) this.renderPDFPage(cur + 1);
   },
 
-  updateZoomLevel() {
+  zoomIn() {
+    if (this.currentType !== 'pdf' || !this.pdfDoc) return;
+    this.setZoom(this.pdfScale + 0.15);
+  },
+
+  zoomOut() {
+    if (this.currentType !== 'pdf' || !this.pdfDoc) return;
+    this.setZoom(this.pdfScale - 0.15);
+  },
+
+  fitWidth() {
+    if (this.currentType !== 'pdf' || !this.pdfDoc) return;
+    const content = document.getElementById('reader-content');
+    const availableWidth = (content?.clientWidth || window.innerWidth) - 24;
+    const baseWidth = this._basePageWidth || 620;
+    if (availableWidth > 100 && baseWidth > 0) {
+      const newScale = +(availableWidth / baseWidth).toFixed(2);
+      this.setZoom(newScale);
+    }
+  },
+
+  reRenderAllPDF() {
+    this.setZoom(this.pdfScale);
+  },
+
+  updateZoomLevel(overrideScale) {
+    const scale = overrideScale !== undefined ? overrideScale : this.pdfScale;
     const el = document.getElementById('zoom-level');
-    if (el) el.textContent = `${Math.round(this.pdfScale * 100)}%`;
+    if (el) {
+      el.textContent = `${Math.round(scale * 100)}%`;
+      if (overrideScale !== undefined) {
+        el.dataset.pendingScale = scale;
+      }
+    }
   },
 
   /* ==========================================
@@ -1115,8 +1215,25 @@ document.addEventListener('DOMContentLoaded', () => {
   // Menu de overflow no mobile
   const readerMore = document.getElementById('reader-more');
   const readerTools = document.getElementById('reader-tools');
-  readerMore?.addEventListener('click', () => {
+  readerMore?.addEventListener('click', (e) => {
+    e.stopPropagation();
     readerTools?.classList.toggle('mobile-open');
+  });
+
+  // Fecha o menu de ferramentas ao clicar em qualquer opção
+  readerTools?.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      readerTools?.classList.remove('mobile-open');
+    });
+  });
+
+  // Fecha menu de ferramentas ou toolbar ao clicar fora
+  document.addEventListener('click', (e) => {
+    if (readerTools?.classList.contains('mobile-open')) {
+      if (!readerTools.contains(e.target) && !readerMore?.contains(e.target)) {
+        readerTools.classList.remove('mobile-open');
+      }
+    }
   });
 
   // Fecha toolbar de seleção ao clicar fora
