@@ -137,18 +137,13 @@ const Reader = {
       this.activeBlobUrl = null;
     }
 
-    if (this._wheelZoomHandler) {
-      readerView.removeEventListener('wheel', this._wheelZoomHandler);
-      this._wheelZoomHandler = null;
-    }
-
     if (this._zoomTimeout) {
       clearTimeout(this._zoomTimeout);
       this._zoomTimeout = null;
     }
 
-    this.pdfDoc = null;
-    this.pdfPages = [];
+    // Libera canvases, observer, listeners e o documento PDF (evita estouro de memória no celular)
+    this.teardownPDF();
     this.nightMode = false;
     this.pdfScale = 1.2;
 
@@ -171,7 +166,100 @@ const Reader = {
   /* ==========================================
      PDF Reader (PDF.js com TextLayer Selecionável)
      ========================================== */
+  /**
+   * Detecta dispositivos móveis / touch (memória bem mais limitada)
+   */
+  isMobileDevice() {
+    return window.matchMedia('(max-width: 768px), (pointer: coarse)').matches;
+  },
+
+  /**
+   * Calcula a resolução do canvas limitando o total de pixels.
+   * Em celulares com devicePixelRatio 3, uma página sem limite ocupa ~25MB de RAM.
+   */
+  getPDFOutputScale(viewport) {
+    const mobile = this.isMobileDevice();
+    const dpr = window.devicePixelRatio || 1;
+    let scale = Math.min(dpr, mobile ? 2 : 3);
+    const maxPixels = mobile ? 3500000 : 12000000;
+    const area = viewport.width * viewport.height;
+    if (area * scale * scale > maxPixels) {
+      scale = Math.sqrt(maxPixels / area);
+    }
+    return Math.max(scale, 0.5);
+  },
+
+  /**
+   * Libera a memória de uma página (canvas + camada de texto)
+   */
+  releasePDFPage(item) {
+    item.gen = (item.gen || 0) + 1;
+    if (item.renderTask) {
+      try { item.renderTask.cancel(); } catch (_) {}
+      item.renderTask = null;
+    }
+    item.canvas.width = 0;
+    item.canvas.height = 0;
+    item.textLayer.innerHTML = '';
+    if (item.page) {
+      try { item.page.cleanup(); } catch (_) {}
+    }
+    item.rendered = false;
+    item.rendering = false;
+  },
+
+  /**
+   * Libera páginas que estão longe da área visível
+   */
+  evictFarPDFPages() {
+    if (!this.pdfPages.length) return;
+    const vh = window.innerHeight;
+    const margin = Math.max(vh * 2, 1500);
+    this.pdfPages.forEach(p => {
+      if (!p.rendered && !p.rendering) return;
+      const r = p.wrapper.getBoundingClientRect();
+      if (r.bottom < -margin || r.top > vh + margin) {
+        this.releasePDFPage(p);
+      }
+    });
+  },
+
+  /**
+   * Destrói completamente o PDF atual (documento, worker, canvases e listeners)
+   */
+  teardownPDF() {
+    const readerContent = document.getElementById('reader-content');
+    const readerView = document.getElementById('reader-view');
+
+    if (this._pdfObserver) {
+      this._pdfObserver.disconnect();
+      this._pdfObserver = null;
+    }
+    if (this._pdfScrollHandler && readerContent) {
+      readerContent.removeEventListener('scroll', this._pdfScrollHandler);
+      this._pdfScrollHandler = null;
+    }
+    if (this._wheelZoomHandler && readerView) {
+      readerView.removeEventListener('wheel', this._wheelZoomHandler);
+      this._wheelZoomHandler = null;
+    }
+
+    this.pdfPages.forEach(p => this.releasePDFPage(p));
+    this.pdfPages = [];
+
+    if (this._pdfLoadingTask) {
+      try { this._pdfLoadingTask.destroy(); } catch (_) {}
+      this._pdfLoadingTask = null;
+    } else if (this.pdfDoc) {
+      try { this.pdfDoc.destroy(); } catch (_) {}
+    }
+    this.pdfDoc = null;
+  },
+
   async loadPDF(url, container) {
+    // Garante que nenhum PDF anterior continue ocupando memória
+    this.teardownPDF();
+
     container.innerHTML = `
       <div class="loading-container">
         <div class="loading-spinner"></div>
@@ -180,13 +268,17 @@ const Reader = {
     `;
 
     document.getElementById('zoom-controls').style.display = 'flex';
+    const isMobile = this.isMobileDevice();
     this.pdfScale = 1.15;
 
     const loadingTask = pdfjsLib.getDocument({
       url,
       cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
-      cMapPacked: true
+      cMapPacked: true,
+      // Baixa apenas os trechos necessários em vez do arquivo inteiro em segundo plano
+      disableAutoFetch: true
     });
+    this._pdfLoadingTask = loadingTask;
     this.pdfDoc = await loadingTask.promise;
 
     const totalPages = this.pdfDoc.numPages;
@@ -196,6 +288,14 @@ const Reader = {
     let sampleHeight = 880;
     try {
       const firstPage = await this.pdfDoc.getPage(1);
+      // No celular, ajusta o zoom inicial à largura da tela (canvases menores = menos memória)
+      if (isMobile) {
+        const baseVp = firstPage.getViewport({ scale: 1 });
+        const available = (container.clientWidth || window.innerWidth) - 24;
+        if (available > 100) {
+          this.pdfScale = Math.min(Math.max(+(available / baseVp.width).toFixed(2), 0.5), 1.5);
+        }
+      }
       const sampleVp = firstPage.getViewport({ scale: this.pdfScale });
       sampleWidth = Math.round(sampleVp.width);
       sampleHeight = Math.round(sampleVp.height);
@@ -264,9 +364,11 @@ const Reader = {
 
     // Scroll progress tracker
     const readerContent = document.getElementById('reader-content');
-    readerContent.addEventListener('scroll', Utils.debounce(() => {
+    this._pdfScrollHandler = Utils.debounce(() => {
       this.updatePDFProgress(readerContent, totalPages);
-    }, 300));
+      this.evictFarPDFPages();
+    }, 300);
+    readerContent.addEventListener('scroll', this._pdfScrollHandler, { passive: true });
 
     // Captura seleção de texto dentro do PDF para exibir toolbar flutuante
     this.setupPDFTextSelection(pagesContainer);
@@ -287,6 +389,7 @@ const Reader = {
   },
 
   setupPDFIntersectionObserver() {
+    const margin = this.isMobileDevice() ? 400 : 600;
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
@@ -296,24 +399,27 @@ const Reader = {
       });
     }, {
       root: document.getElementById('reader-content'),
-      rootMargin: '600px 0px 600px 0px' // Pré-renderiza com margem ampla
+      rootMargin: `${margin}px 0px ${margin}px 0px` // Pré-renderiza com margem
     });
 
     this.pdfPages.forEach(p => observer.observe(p.wrapper));
+    this._pdfObserver = observer;
   },
 
   async renderPDFPage(pageNum) {
     const item = this.pdfPages[pageNum - 1];
     if (!item || item.rendered || item.rendering) return;
     item.rendering = true;
+    const gen = item.gen || 0;
 
     try {
       if (!item.page) {
         item.page = await this.pdfDoc.getPage(pageNum);
       }
+      if ((item.gen || 0) !== gen) return; // página liberada durante o carregamento
 
       const viewport = item.page.getViewport({ scale: this.pdfScale });
-      const outputScale = window.devicePixelRatio || 1;
+      const outputScale = this.getPDFOutputScale(viewport);
 
       item.wrapper.style.width = `${viewport.width}px`;
       item.wrapper.style.height = `${viewport.height}px`;
@@ -331,7 +437,10 @@ const Reader = {
         canvasContext: ctx,
         viewport
       };
-      await item.page.render(renderContext).promise;
+      item.renderTask = item.page.render(renderContext);
+      await item.renderTask.promise;
+      item.renderTask = null;
+      if ((item.gen || 0) !== gen) return;
       item.rendered = true;
 
       // Renderiza Camada de Texto para SELEÇÃO DE TEXTO
@@ -357,7 +466,7 @@ const Reader = {
         console.warn(`Erro ao renderizar página PDF ${pageNum}:`, err);
       }
     } finally {
-      item.rendering = false;
+      if ((item.gen || 0) === gen) item.rendering = false;
     }
   },
 
@@ -437,8 +546,9 @@ const Reader = {
 
   reRenderAllPDF() {
     this.updateZoomLevel();
-    this.pdfPages.forEach(p => { p.rendered = false; });
     const cur = this.getCurrentPDFPage();
+    // Libera todos os canvases antes de redesenhar no novo zoom (evita acumular memória)
+    this.pdfPages.forEach(p => this.releasePDFPage(p));
     this.renderPDFPage(cur);
     if (cur > 1) this.renderPDFPage(cur - 1);
     if (cur < this.pdfPages.length) this.renderPDFPage(cur + 1);
