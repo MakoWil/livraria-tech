@@ -297,15 +297,7 @@ const AIChat = {
 
     this.abortController = new AbortController();
 
-    console.log('%c[Tutor IA] 🚀 Enviando mensagem:', 'color: #4f6ef7; font-weight: bold;', {
-      userText,
-      pageLabel,
-      hasSelection: !!attachedSelection,
-      messagesCount: this.messages.length
-    });
-
     try {
-      console.log('[Tutor IA] 📡 Fazendo POST /api/ai/chat...');
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -320,8 +312,6 @@ const AIChat = {
         signal: this.abortController.signal
       });
 
-      console.log(`%c[Tutor IA] 📥 Resposta HTTP: ${response.status} ${response.statusText}`, 'color: #10b981; font-weight: bold;');
-
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.error || `Erro ${response.status}`);
@@ -333,10 +323,7 @@ const AIChat = {
 
       while (true) {
         const { value, done } = await reader.read();
-        if (done) {
-          console.log('[Tutor IA] 🏁 Stream encerrado pelo servidor.');
-          break;
-        }
+        if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
         while (true) {
@@ -353,14 +340,12 @@ const AIChat = {
               if (!jsonStr) continue;
               try {
                 const parsed = JSON.parse(jsonStr);
-                console.log('[Tutor IA Chunk]', parsed);
                 if (parsed.text) {
                   modelMsg.text += parsed.text;
                   modelMsg.loading = false;
                   this.updateLastModelMessage();
                 }
                 if (parsed.error) {
-                  console.error('[Tutor IA Erro do Servidor]', parsed.error);
                   modelMsg.text = `⚠️ ${parsed.error}`;
                   modelMsg.loading = false;
                   this.updateLastModelMessage();
@@ -369,9 +354,7 @@ const AIChat = {
                   modelMsg.loading = false;
                   this.updateLastModelMessage();
                 }
-              } catch (e) {
-                console.warn('[Tutor IA] Erro ao parsear JSON:', jsonStr, e);
-              }
+              } catch (_) { /* ignore JSON parse chunk errors */ }
             }
           }
         }
@@ -379,7 +362,6 @@ const AIChat = {
 
       modelMsg.loading = false;
       this.updateLastModelMessage();
-      console.log('%c[Tutor IA] ✅ Mensagem completa recebida!', 'color: #10b981; font-weight: bold;');
 
     } catch (err) {
       console.error('%c[Tutor IA Falha]', 'color: #ef4444; font-weight: bold;', err);
